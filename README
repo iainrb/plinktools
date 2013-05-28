@@ -1,0 +1,7 @@
+Plinktools: Python code for I/O of Plink genotyping files
+
+Author: Iain Bancarz, ib5@sanger.ac.uk
+
+Plinktools was created to support the WTSI genotyping pipeline: https://github.com/wtsi-npg/genotyping
+
+The Plink data format was created by Sean Purcell et al. See: http://pngu.mgh.harvard.edu/~purcell/plink
