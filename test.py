@@ -27,7 +27,7 @@ class TestPlink(unittest.TestCase):
 
     def setUp(self):
         self.dataDir = 'data'
-        self.outDir = mkdtemp(dir=self.dataDir)        
+        self.outDir = os.path.abspath(mkdtemp(dir=self.dataDir))
 
     def getMD5hex(self, inPath):
         """Get MD5 checksum for contents of given file, in hex format"""
@@ -39,12 +39,23 @@ class TestPlink(unittest.TestCase):
     def test_merge(self):
         bed0 = os.path.join(self.dataDir, 'merge0.bed')
         bed1 = os.path.join(self.dataDir, 'merge1.bed')
+        bed2 = os.path.join(self.dataDir, 'merge2.bed')
+        prefix = 'merge_test'
         out = os.path.join(self.outDir, 'merge_test.bed')
         snps = 538448
-        PlinkHandler(snps).mergePair((bed0, bed1), (11, 11), out)
+        PlinkHandler(snps).mergeBed((bed0, bed1, bed2), (11, 11, 11), out)
         self.assertTrue(os.path.exists(out))
         md5 = self.getMD5hex(out)
-        self.assertEqual(md5, '76d69db6e50f90f2a147ebf527e4ecd6')
+        self.assertEqual(md5, '9bab68c95b13de8200b350e1db00fa04')
+        # run plink on output
+        startDir = os.getcwd()
+        os.chdir(self.dataDir)
+        mergedFam = os.path.join(self.outDir, prefix+'.fam')
+        os.system('cat merge0.fam merge1.fam merge2.fam > '+mergedFam)
+        os.system('cp merge0.bim '+os.path.join(self.outDir, prefix+'.bim'))
+        os.chdir(self.outDir)
+        self.assertEqual(os.system('plink --bfile '+prefix+' > /dev/null'), 0)
+        os.chdir(startDir)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
