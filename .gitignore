@@ -7,5 +7,6 @@
 *.hh
 *.log
 *.nof
-# ignore temporary files
+# ignore temporary files/directories
 *~
+tmp*
