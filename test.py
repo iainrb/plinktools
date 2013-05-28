@@ -26,8 +26,8 @@ from plink import PlinkHandler
 class TestPlink(unittest.TestCase):
 
     def setUp(self):
-        self.dataDir = 'data'
-        self.outDir = os.path.abspath(mkdtemp(dir=self.dataDir))
+        self.dataDir = '/nfs/gapi/data/genotype/plinktools_test'
+        self.outDir = os.path.abspath(mkdtemp(dir='.'))
 
     def getMD5hex(self, inPath):
         """Get MD5 checksum for contents of given file, in hex format"""
