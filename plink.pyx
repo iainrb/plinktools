@@ -72,37 +72,47 @@ class PlinkHandler:
         if sampleTotal % 4 != 0: size += 1
         return size
 
-    def mergePair(self, inPaths, samples, outPath):
-        """Merge two Plink .bed files in SNP-major order"""
-        inFiles = (open(inPaths[0], 'r'), open(inPaths[1], 'r'))
+    def mergeBed(self, inPaths, samples, outPath):
+        """Merge two or more Plink .bed files in SNP-major order"""
+        inputTotal = len(inPaths)
+        if len(inPaths)!=len(samples):
+            msg = "Mismatched lengths of input path and samples lists"
+            raise ValueError(msg)
+        inFiles = []
+        for inPath in inPaths: inFiles.append((open(inPath, 'r')))
         outFile = open(outPath, 'w')
         # check Plink headers
         head = None
-        for inFile in inFiles:
-            head = self.validateHeader(inFile)
+        for inFile in inFiles: head = self.validateHeader(inFile)
         outFile.write(head)
-        # read byte blocks for each sample
-        remainders = (samples[0] % 4, samples[1] % 4)
-        sizes = (self.findBlockSize(samples[0]), self.findBlockSize(samples[1]))
+        # read byte blocks for each sample, recode, and output
+        remainders = []
+        sizes = []
+        for total in samples: 
+            remainders.append(total % 4)
+            sizes.append(self.findBlockSize(total))
         for i in range(self.snpTotal):
-            blocks = (inFiles[0].read(sizes[0]), inFiles[1].read(sizes[1]))
-            if remainders[0]==0 and remainders[1]==0:
-                # write both blocks without change
-                for j in (0,1): outFile.write(blocks[j])
-            else:
-                calls = []
-                for j in (0,1):
+            recoded = False
+            calls = []
+            for j in range(inputTotal):
+                block = inFiles[j].read(sizes[j])
+                if recoded==False and remainders[j]==0:
+                    # special case -- can write starting blocks unchanged
+                    outFile.write(block)
+                else:
+                    # must recode this and all subsequent blocks
+                    recoded = True
                     for k in range(sizes[j] - 1):
-                        parsed = self.parseBed(blocks[j][k])
+                        parsed = self.parseBed(block[k])
                         calls.extend(self.readGenotypes(parsed))
-                    lastCalls = self.readGenotypes(self.parseBed(blocks[j][-1]))
+                    lastCalls = self.readGenotypes(self.parseBed(block[-1]))
                     if remainders[j]!=0: 
                         calls.extend(lastCalls[0:remainders[j]])
                     else:
                         calls.extend(lastCalls)
-                calls.extend([0]*(len(calls) % 4)) # null padding, if needed
-                outFile.write(''.join(self.callsToBinary(calls)))
-        for i in (0,1):
+            calls.extend([0]*(4 - (len(calls) % 4))) # null padding, if needed
+            outFile.write(''.join(self.callsToBinary(calls))) # output for SNP
+        for i in range(inputTotal):
             result = inFiles[i].read()
             if result!='':
                 msg = "Error: "+str(len(result))+" bytes found after final "+\
