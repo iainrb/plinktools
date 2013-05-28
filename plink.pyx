@@ -31,12 +31,6 @@ class PlinkHandler:
         """Assume snp-major input; different samples, same SNP set"""
         self.snpTotal = snpTotal
 
-        #self.sampleTotal = sampleTotal
-        #self.remainder = sampleTotal % 4
-        #self.blockSize = self.findBlockSize(self.sampleTotal)
-        #print "REMAINDER", self.remainder
-        #print "BLOCK_SIZE", self.blockSize
-
     def callsToBinary(self, calls):
         """Translate list of genotype calls to Plink binary
 
@@ -47,7 +41,6 @@ class PlinkHandler:
         i = 0
         while i < len(calls):
             byte = struct.pack('B', self.callsToByte(calls[i:i+4]))
-            #print "\t", calls[i:i+4], ord(byte)
             output.append(byte)
             i += 4
         return output
@@ -86,27 +79,20 @@ class PlinkHandler:
         # check Plink headers
         head = None
         for inFile in inFiles:
-            head = inFile.read(3)
-            if ord(head[0])!=108 or ord(head[1])!=27:
-                msg = "Header does not start with Plink 'magic number'!"
-                raise ValueError(msg)
-            elif ord(head[2])!=1:
-                raise ValueError("Plink .bed files must be in SNP-major order.")
+            head = self.validateHeader(inFile)
         outFile.write(head)
         # read byte blocks for each sample
         remainders = (samples[0] % 4, samples[1] % 4)
-        blockSize = (self.findBlockSize(samples[0]), 
-                     self.findBlockSize(samples[1]))
+        sizes = (self.findBlockSize(samples[0]), self.findBlockSize(samples[1]))
         for i in range(self.snpTotal):
-            blocks = (inFiles[0].read(blockSize[0]),
-                      inFiles[1].read(blockSize[1]))
+            blocks = (inFiles[0].read(sizes[0]), inFiles[1].read(sizes[1]))
             if remainders[0]==0 and remainders[1]==0:
                 # write both blocks without change
                 for j in (0,1): outFile.write(blocks[j])
             else:
                 calls = []
                 for j in (0,1):
-                    for k in range(blockSize[j] - 1):
+                    for k in range(sizes[j] - 1):
                         parsed = self.parseBed(blocks[j][k])
                         calls.extend(self.readGenotypes(parsed))
                     lastCalls = self.readGenotypes(self.parseBed(blocks[j][-1]))
@@ -115,12 +101,11 @@ class PlinkHandler:
                     else:
                         calls.extend(lastCalls)
                 calls.extend([0]*(len(calls) % 4)) # null padding, if needed
-                #print i, calls, len(calls), self.callsToBinary(calls)
                 outFile.write(''.join(self.callsToBinary(calls)))
         for i in (0,1):
             result = inFiles[i].read()
             if result!='':
-                msg = "Error: "+len(result)+" bytes found after final "+\
+                msg = "Error: "+str(len(result))+" bytes found after final "+\
                     "expected sample in "+inPaths[i]
                 raise ValueError(msg)
         for myFile in (inFiles[0], inFiles[1], outFile): myFile.close()
@@ -152,3 +137,16 @@ class PlinkHandler:
             gtypes.append(gtype)
             i += 2
         return gtypes
+
+    def validateHeader(self, inFile, snpMajor=True):
+        """Read and validate Plink .bed header"""
+        head = inFile.read(3)
+        if ord(head[0])!=108 or ord(head[1])!=27:
+            msg = "Header does not start with Plink 'magic number'!"
+            raise ValueError(msg)
+        if snpMajor:
+            if ord(head[2])!=1:
+                raise ValueError("Plink .bed file not in SNP-major order.")
+        elif ord(head[2])!=0:
+            raise ValueError("Plink .bed file not in individual-major order.")
+        return head
