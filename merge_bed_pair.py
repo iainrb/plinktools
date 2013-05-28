@@ -18,7 +18,9 @@
 
 # Author: Iain Bancarz, ib5@sanger.ac.uk
 
-"""Script to merge two Plink .bed files"""
+"""Script to merge two Plink .bed files
+
+Note that method used can merge arbitrarily many files"""
 
 
 import pyximport, sys
@@ -28,6 +30,6 @@ from plink import PlinkHandler
 bed1 = sys.argv[1]
 bed2 = sys.argv[2]
 out = sys.argv[3]
-snps = 538448
-PlinkHandler(snps).mergePair((bed1, bed2), (11, 11), out)
+snps = int(sys.argv[4]) #538448
+PlinkHandler(snps).mergeBed((bed1, bed2), (11, 11), out)
 
