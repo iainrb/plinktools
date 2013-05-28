@@ -1,0 +1,11 @@
+# ignore plink test data
+*.bed
+*.bim
+*.fam
+*.ped
+*.map
+*.hh
+*.log
+*.nof
+# ignore temporary files
+*~
