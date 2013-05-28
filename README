@@ -4,4 +4,4 @@ Author: Iain Bancarz, ib5@sanger.ac.uk
 
 Plinktools was created to support the WTSI genotyping pipeline: https://github.com/wtsi-npg/genotyping
 
-The Plink data format was created by Sean Purcell et al. See: http://pngu.mgh.harvard.edu/~purcell/plink
+The Plink data format was created by Shaun Purcell et al. See: http://pngu.mgh.harvard.edu/~purcell/plink
