@@ -18,18 +18,31 @@
 
 # Author: Iain Bancarz, ib5@sanger.ac.uk
 
-"""Script to merge two Plink .bed files
-
-Note that method used can merge arbitrarily many files"""
+"""Script to merge two Plink .bed files"""
 
 
-import pyximport, sys
-pyximport.install()
-from plink import PlinkHandler
+import os, sys
+from plink import PlinkMerger
 
-bed1 = sys.argv[1]
-bed2 = sys.argv[2]
+stem1 = sys.argv[1]
+stem2 = sys.argv[2]
 out = sys.argv[3]
-snps = int(sys.argv[4]) #538448
-PlinkHandler(snps).mergeBed((bed1, bed2), (11, 11), out)
 
+snps1 = len(open(stem1+".bim").readlines())
+snps2 = len(open(stem2+".bim").readlines())
+if snps1 != snps2:
+    raise ValueError("Mismatched SNP set lengths!")
+samples1 = len(open(stem1+".fam").readlines())
+samples2 = len(open(stem2+".fam").readlines())
+
+pm = PlinkMerger(snps1)
+
+if pm.filesIdentical(stem1+".bim", stem2+".bim"): print ".bim files identical"
+else: raise ValueError("Non-identical .bim files!")
+
+pm.mergeBedSamples((stem1+".bed", stem2+".bed"), 
+                   (samples1, samples2), out+".bed")
+cmd = "cat %s %s > %s" % (stem1+".fam", stem2+".fam", out+".fam")
+os.system(cmd)
+cmd = "cp %s %s" %  (stem1+".bim", out+".bim")
+os.system(cmd)
