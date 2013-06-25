@@ -10,3 +10,5 @@
 # ignore temporary files/directories
 *~
 tmp*
+# ignore compiled python
+*.pyc
