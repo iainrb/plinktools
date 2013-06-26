@@ -17,15 +17,12 @@
 #
 # Author: Iain Bancarz, ib5@sanger.ac.uk
 
-
-# Originally based on PlinkHandler from zCall
-# TODO re-implement zCall version as a subclass of this one?
+# Originally based on PlinkHandler class from zCall
 
 """Process Plink format genotyping data
 See http://pngu.mgh.harvard.edu/~purcell/plink/
 
-A PlinkWriter subclass has been written for zCall
-Could be adapted for more generic Plink output
+A PlinkWriter subclass has been written for the zCall genotype caller
 See https://github.com/wtsi-npg/zCall
 """
 
@@ -141,10 +138,17 @@ class PlinkHandler:
 
 class PlinkEquivalenceTester(PlinkHandler):
 
-    """Test equivalence of two Plink binary datasets
+    """Test equivalence of two Plink datasets
 
-    Plink executable can do diff on SNP calls
-    Diff doesn't directly compare SNP or sample sets -- do this separately"""
+    Plink executable can do diff on SNP calls, but this doesn't check 
+    congruence of SNP/sample sets, or deal with the flip of major/minor
+    alleles introduced by certain plink actions (eg. merge)
+
+    This class can compare binary datasets or non-binary .ped files"""
+
+    def __init__(self):
+        """Overrides parent class -- snp total is not an instance variable"""
+        pass
 
     def bedEquivalent(self, bedPath1, bedPath2, flip, snpTotal, samples, 
                       verbose=True):
@@ -173,7 +177,6 @@ class PlinkEquivalenceTester(PlinkHandler):
                     if verbose:
                         msg = "Non-equivalent calls at SNP %s, sample %s\n" % \
                             (i, j)
-                        sys.stderr.write(msg)
                         sys.stderr.write(msg)
                         break
         bed1.close()
@@ -213,7 +216,7 @@ class PlinkEquivalenceTester(PlinkHandler):
                         msg = "Allele values for SNP index "+str(i)+\
                             "incompatible with flip!\n"
                         sys.stderr.write(msg)
-        return (equiv, flip)
+        return (equiv, flip, snpTotal)
 
     def callsEquivalent(self, c1, c2, flip):
         """Compare call codes for equivalence
@@ -234,13 +237,68 @@ class PlinkEquivalenceTester(PlinkHandler):
             elif not flip and c2 == 3: equiv = True
         return equiv
 
+    def compare(self, stem1, stem2, verbose=False):
+        """Compare two Plink binary datasets with given prefixes"""
+        (famOK, samples) = self.famEquivalent(stem1+".fam", stem2+".fam", 
+                                              verbose)
+        if not famOK: 
+            if verbose: sys.stderr.write("Mismatched .fam files!")
+            return False
+        (bimOK, flip, snpTotal) = self.bimEquivalent(stem1+".bim", stem2+".bim",
+                                                     verbose)
+        if not bimOK:
+            if verbose: sys.stderr.write("Mismatched .bim files!")
+            return False
+        bedOK = self.bedEquivalent(stem1+".bed", stem2+".bed", 
+                                   flip, snpTotal, samples,
+                                   verbose)
+        if not bedOK:
+            if verbose: sys.stderr.write("Mismatched .bed files!")
+            return False
+        else:
+            return True
+
+    def comparePed(self, pedPath1, pedPath2, flip=True, verbose=True):
+        """Compare two .ped files
+
+        If flip==True, assume major/minor alleles in one input are swapped
+        Note that .ped files are sample-major by default
+        """
+        in1 = open(pedPath1)
+        in2 = open(pedPath2)
+        equiv = True
+        i = 0
+        while True:
+            calls1 = self.parsePedLine(in1.readline())
+            calls2 = self.parsePedLine(in2.readline())
+            if calls1==None:
+                if calls2!=None: raise ValueError
+                else: break
+            elif len(calls1)!=len(calls2):
+                raise ValueError
+            for j in range(len(calls1)):
+                c1 = calls1[j]
+                c2 = calls2[j]
+                if flip: c2 = c2[1]+c2[0]
+                if c1!=c2:
+                    equiv = False
+                    break
+            i += 1
+            if verbose and i % 10 == 0:
+                print "Read .ped line "+str(i)
+                sys.stdout.flush()
+        in1.close()
+        in2.close()
+        return equiv
+
     def famEquivalent(self, famPath1, famPath2, verbose=True):
         """Check sample info in .fam files"""
         genders1 = self.readFamGenders(famPath1)
         genders2 = self.readFamGenders(famPath2)
         [keys1, keys2] = [genders1.keys(), genders2.keys()]
         equiv = True
-        if len(keys1) != len(keys2):
+        samples = len(keys1)
+        if samples != len(keys2):
             equiv = False
             if verbose: 
                 sys.stderr.write(".fam files of unequal length!\n")
@@ -255,7 +313,7 @@ class PlinkEquivalenceTester(PlinkHandler):
                     if verbose:
                         msg = "Mismatched sample genders in .fam files!\n"
                         sys.stderr.write(msg)
-        return equiv
+        return (equiv, samples)
 
     def readFamGenders(self, famPath):
         """Read sample identifiers and genders from .fam file"""
@@ -277,6 +335,20 @@ class PlinkEquivalenceTester(PlinkHandler):
         allele2 = words[5]
         return (name, allele1, allele2)
 
+    def parsePedLine(self, line):
+        """Parse single line from a .ped file into allele pairs
+
+        Eg. [AG, GC, AA, TT, ...]"""
+        if line=='': return None
+        words = re.split('\s+', line.strip())
+        i = 6 # omit header information
+        calls = []
+        while i < len(words):
+            calls.append(words[i]+words[i+1])
+            i += 2
+        return calls
+            
+
 class PlinkMerger(PlinkHandler):
 
     """Class to merge Plink datasets
@@ -285,13 +357,16 @@ class PlinkMerger(PlinkHandler):
     Omits cross-checking in Plink, but faster, especially for multiple inputs
     """
 
+    def __init__(self):
+        pass
+
     def filesIdentical(self, path1, path2):
         cmd = "diff -q %s %s &> /dev/null" % (path1, path2)
         status = os.system(cmd)
         if status==0: return True
         else: return False
 
-    def mergeBedSamples(self, inPaths, samples, outPath):
+    def mergeBedSnpMajor(self, inPaths, samples, outPath, snpTotal):
         """Merge two or more Plink .bed files in SNP-major order
 
         Arguments: paths to .bed files, and total numbers of samples per group
@@ -313,21 +388,23 @@ class PlinkMerger(PlinkHandler):
         for total in samples: 
             remainders.append(total % 4)
             sizes.append(self.findBlockSize(total))
-        for i in range(self.snpTotal): # for each snp
+        for i in range(snpTotal): # for each snp
             recoded = False
+            calls = []
             for j in range(inputTotal): # for each sample
                 block = inFiles[j].read(sizes[j])
                 if recoded==False and remainders[j]==0:
-                    # special case -- can write starting blocks unchanged
+                    # special case -- can write input unchanged
                     outFile.write(block)
                 else:
                     # must recode this and all subsequent blocks for the SNP
                     recoded = True
-                    calls = self.blockToCalls(block, remainders[j])
-                    if len(calls) % 4 != 0:
-                        # null-pad output to an integer number of bytes
-                        calls.extend([0]*(4 - (len(calls) % 4))) 
-                    outFile.write(''.join(self.callsToBinary(calls)))
+                    calls.extend(self.blockToCalls(block, remainders[j]))
+            if recoded:
+                if len(calls) % 4 != 0:
+                    # null-pad output to an integer number of bytes
+                    calls.extend([0]*(4 - (len(calls) % 4))) 
+                outFile.write(''.join(self.callsToBinary(calls)))
         for i in range(inputTotal):
             if inFiles[i].read() != '':
                 msg = "Bytes found after final expected sample in "+inPaths[i]
@@ -335,3 +412,24 @@ class PlinkMerger(PlinkHandler):
             else:
                 inFiles[i].close()
         outFile.close()
+
+    def merge(self, stems, outPrefix):
+        bimPath = stems[0]+".bim"
+        snpTotal = len(open(bimPath).readlines())
+        for i in range(1, len(stems)):
+            otherBim = stems[i]+".bim"
+            if not self.filesIdentical(bimPath, otherBim):
+                raise ValueError("Non-identical .bim files!")
+        bedPaths = []
+        samples = []
+        for stem in stems:
+            bedPaths.append(stem+".bed")
+            samples.append(len(open(stem+".fam").readlines()))
+        self.mergeBedSnpMajor(bedPaths, samples, outPrefix+".bed", snpTotal)
+        # Write appropriate .bim, .fam files
+        cmd = "cp %s %s" %  (stems[0]+".bim", outPrefix+".bim")
+        os.system(cmd)
+        famPaths = []
+        for stem in stems: famPaths.append(stem+".fam")
+        cmd = "cat "+" ".join(famPaths)+" > "+outPrefix+".fam"
+        os.system(cmd)
