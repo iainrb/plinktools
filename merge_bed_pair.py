@@ -35,14 +35,6 @@ if snps1 != snps2:
 samples1 = len(open(stem1+".fam").readlines())
 samples2 = len(open(stem2+".fam").readlines())
 
-pm = PlinkMerger(snps1)
+pm = PlinkMerger()
+pm.merge((stem1, stem2), out)
 
-if pm.filesIdentical(stem1+".bim", stem2+".bim"): print ".bim files identical"
-else: raise ValueError("Non-identical .bim files!")
-
-pm.mergeBedSamples((stem1+".bed", stem2+".bed"), 
-                   (samples1, samples2), out+".bed")
-cmd = "cat %s %s > %s" % (stem1+".fam", stem2+".fam", out+".fam")
-os.system(cmd)
-cmd = "cp %s %s" %  (stem1+".bim", out+".bim")
-os.system(cmd)

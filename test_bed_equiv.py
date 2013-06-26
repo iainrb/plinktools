@@ -27,23 +27,8 @@ from plink import PlinkEquivalenceTester
 stem1 = sys.argv[1]
 stem2 = sys.argv[2]
 
-snps1 = len(open(stem1+".bim").readlines())
-snps2 = len(open(stem2+".bim").readlines())
-if snps1 != snps2:
-    raise ValueError("Mismatched SNP set lengths!")
-
-pet = PlinkEquivalenceTester(snps1)
-
-if pet.famEquivalent(stem1+".fam", stem2+".fam"): print ".fam files match."
-else: raise ValueError
-samples = len(open(stem1+".fam").readlines())
-
-(equiv, flip) = pet.bimEquivalent(stem1+".bim", stem2+".bim")
-if equiv: print ".bim files match."
-else: raise ValueError
-print "%s of %s allele pairs flipped." % (sum(flip), len(flip))
-
-ok = pet.bedEquivalent(stem1+".bed", stem2+".bed", flip, snps1, samples)
+pet = PlinkEquivalenceTester()
+ok = pet.compare(stem1, stem2, verbose=True)
 
 if ok: print "OK: .bed files match."
 else: print "NOT_OK: .bed files do not match!"
