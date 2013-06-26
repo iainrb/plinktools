@@ -27,7 +27,7 @@ See https://github.com/wtsi-npg/zCall
 """
 
 
-import json, os, re, struct, sys
+import os, re, struct, sys, time
 
 class PlinkHandler:
 
@@ -358,7 +358,7 @@ class PlinkMerger(PlinkHandler):
     """
 
     def __init__(self):
-        pass
+        self.timeFormat = "%Y-%m-%d_%H:%M:%S"
 
     def filesIdentical(self, path1, path2):
         cmd = "diff -q %s %s &> /dev/null" % (path1, path2)
@@ -366,7 +366,8 @@ class PlinkMerger(PlinkHandler):
         if status==0: return True
         else: return False
 
-    def mergeBedSnpMajor(self, inPaths, samples, outPath, snpTotal):
+    def mergeBedSnpMajor(self, inPaths, samples, outPath, snpTotal, 
+                         log=None):
         """Merge two or more Plink .bed files in SNP-major order
 
         Arguments: paths to .bed files, and total numbers of samples per group
@@ -405,6 +406,11 @@ class PlinkMerger(PlinkHandler):
                     # null-pad output to an integer number of bytes
                     calls.extend([0]*(4 - (len(calls) % 4))) 
                 outFile.write(''.join(self.callsToBinary(calls)))
+            if log!=None and ((i+1) % 10000 == 0 or i+1 == snpTotal):
+                msg = "Merged samples for probe %s of %s" % (i+1, snpTotal)
+                t = time.strftime(self.timeFormat, time.localtime())
+                log.write(t+" "+msg+"\n")
+                log.flush()
         for i in range(inputTotal):
             if inFiles[i].read() != '':
                 msg = "Bytes found after final expected sample in "+inPaths[i]
@@ -413,19 +419,29 @@ class PlinkMerger(PlinkHandler):
                 inFiles[i].close()
         outFile.close()
 
-    def merge(self, stems, outPrefix):
+    def merge(self, stems, outPrefix, logPath=None):
         bimPath = stems[0]+".bim"
         snpTotal = len(open(bimPath).readlines())
+        if logPath!=None: 
+            log = open(logPath, 'w')
+            t = time.strftime(self.timeFormat, time.localtime())
+            log.write(t+" Started merge.\n")
+        else: 
+            log = None
         for i in range(1, len(stems)):
             otherBim = stems[i]+".bim"
             if not self.filesIdentical(bimPath, otherBim):
                 raise ValueError("Non-identical .bim files!")
+        if log!=None:
+            t = time.strftime(self.timeFormat, time.localtime())
+            log.write(t+" Checked .bim files.\n")
         bedPaths = []
         samples = []
         for stem in stems:
             bedPaths.append(stem+".bed")
             samples.append(len(open(stem+".fam").readlines()))
-        self.mergeBedSnpMajor(bedPaths, samples, outPrefix+".bed", snpTotal)
+        self.mergeBedSnpMajor(bedPaths, samples, outPrefix+".bed", 
+                              snpTotal, log)
         # Write appropriate .bim, .fam files
         cmd = "cp %s %s" %  (stems[0]+".bim", outPrefix+".bim")
         os.system(cmd)
@@ -433,3 +449,7 @@ class PlinkMerger(PlinkHandler):
         for stem in stems: famPaths.append(stem+".fam")
         cmd = "cat "+" ".join(famPaths)+" > "+outPrefix+".fam"
         os.system(cmd)
+        if log!=None: 
+            t = time.strftime(self.timeFormat, time.localtime())
+            log.write(t+" Finished.\n")
+            log.close()
