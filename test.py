@@ -17,11 +17,10 @@
 #
 # Author: Iain Bancarz, ib5@sanger.ac.uk
 
-import os, pyximport, sys, unittest
-pyximport.install()
+import os, sys, unittest
 from hashlib import md5
 from tempfile import mkdtemp
-from plink import PlinkHandler
+from plink import PlinkEquivalenceTester, PlinkMerger
 
 class TestPlink(unittest.TestCase):
 
@@ -36,23 +35,32 @@ class TestPlink(unittest.TestCase):
         checksum = m.hexdigest()
         return checksum
 
+    def test_equivalence(self):
+        """Test equivalence check on pairs of datasets"""
+        stem1 = os.path.join(self.dataDir, 'samples_part_100_small')
+        stem2 = os.path.join(self.dataDir, 'samples_part_100_small')
+        pet = PlinkEquivalenceTester()
+        match = pet.compare(stem1, stem2)
+        self.assertTrue(match)
+        stem3 = os.path.join(self.dataDir, 'samples_part_101_small')
+        match = pet.compare(stem1, stem3)
+        self.assertFalse(match)
+
     def test_merge(self):
-        bed0 = os.path.join(self.dataDir, 'merge0.bed')
-        bed1 = os.path.join(self.dataDir, 'merge1.bed')
-        bed2 = os.path.join(self.dataDir, 'merge2.bed')
+        """Merge two .bed datasets with 100 and 81 samples respectively
+
+        Size of second dataset is not divisible by 4 -- tests recoding"""
+        stem0 = os.path.join(self.dataDir, 'samples_part_000.smajor')
+        stem1 = os.path.join(self.dataDir, 'samples_part_028.smajor')
         prefix = 'merge_test'
-        out = os.path.join(self.outDir, 'merge_test.bed')
-        snps = 538448
-        PlinkHandler(snps).mergeBed((bed0, bed1, bed2), (11, 11, 11), out)
-        self.assertTrue(os.path.exists(out))
-        md5 = self.getMD5hex(out)
-        self.assertEqual(md5, '9bab68c95b13de8200b350e1db00fa04')
+        out = os.path.join(self.outDir, 'merge_test')
+        PlinkMerger().merge((stem0, stem1), out)
+        self.assertTrue(os.path.exists(out+".bed"))
+        md5 = self.getMD5hex(out+".bed")
+        self.assertEqual(md5, 'db7dc2a92d339817d6d18974b0add3c7')
         # run plink on output
         startDir = os.getcwd()
         os.chdir(self.dataDir)
-        mergedFam = os.path.join(self.outDir, prefix+'.fam')
-        os.system('cat merge0.fam merge1.fam merge2.fam > '+mergedFam)
-        os.system('cp merge0.bim '+os.path.join(self.outDir, prefix+'.bim'))
         os.chdir(self.outDir)
         self.assertEqual(os.system('plink --bfile '+prefix+' > /dev/null'), 0)
         os.chdir(startDir)
