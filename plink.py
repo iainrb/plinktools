@@ -28,6 +28,7 @@ See https://github.com/wtsi-npg/zCall
 
 
 import os, re, struct, sys, time
+from glob import glob
 
 class PlinkHandler:
 
@@ -320,10 +321,7 @@ class PlinkEquivalenceTester(PlinkHandler):
         lines = open(famPath).readlines()
         genders = {}
         for line in lines:
-            words = re.split('\s+', line)
-            name = words[0]
-            family = words[1]
-            gender = words[4]
+            (name, family, gender) = self.parseFamLine(line)
             genders[(name, family)] = gender
         return genders
 
@@ -334,6 +332,14 @@ class PlinkEquivalenceTester(PlinkHandler):
         allele1 = words[4]
         allele2 = words[5]
         return (name, allele1, allele2)
+
+    def parseFamLine(self, famLine):
+        """Get name, family, gender from .fam line"""
+        words = re.split('\s+', famLine)
+        name = words[0]
+        family = words[1]
+        gender = words[4]
+        return (name, family, gender)
 
     def parsePedLine(self, line):
         """Parse single line from a .ped file into allele pairs
@@ -358,7 +364,40 @@ class PlinkMerger(PlinkHandler):
     """
 
     def __init__(self):
-        self.timeFormat = "%Y-%m-%d_%H:%M:%S"
+        pass
+
+    def pDisjoint(self, stems, suffix):
+        """Check if plink files with given suffix are all disjoint"""
+        plinkFiles = []
+        for stem in stems: plinkFiles.append(stem+suffix)
+        return self.filesDisjoint(plinkFiles)
+
+    def pIdentical(self, stems, suffix):
+        """Check if plink files with given suffix are all identical"""
+        ident = True
+        firstPlink = stems[0]+suffix
+        for i in range(1, len(stems)):
+            otherPlink = stems[i]+suffix
+            if not self.filesIdentical(firstPlink, otherPlink):
+                ident = False
+                break
+        return ident
+
+    def filesDisjoint(self, inPaths):
+        """Check if files are disjoint, ie. no line occurs more than once
+
+        Loads all inputs into memory -- may be problematic for large datasets"""
+        lines = set()
+        disjoint = True
+        for inPath in inPaths:
+            contents = open(inPath).readlines()
+            for line in contents:
+                if line in lines:
+                    disjoint = False
+                    break
+                else:
+                    lines.add(line)
+        return disjoint
 
     def filesIdentical(self, path1, path2):
         cmd = "diff -q %s %s &> /dev/null" % (path1, path2)
@@ -366,12 +405,82 @@ class PlinkMerger(PlinkHandler):
         if status==0: return True
         else: return False
 
-    def mergeBedSnpMajor(self, inPaths, samples, outPath, snpTotal, 
-                         log=None):
-        """Merge two or more Plink .bed files in SNP-major order
+    def findBedStems(self, inputDir="."):
+        """Find Plink binary stems (paths without .bed, .bim, .fam extension)"""
+        bedList = glob(inputDir+"/*.bed")
+        bedList.sort()
+        plinkList = []
+        for bed in bedList:
+            (stem, ext) = os.path.splitext(bed)
+            plinkList.append(stem)
+            for suffix in (".bim", ".fam"):
+                myFile = stem+suffix
+                if not os.path.exists(myFile):
+                    raise ValueError("Missing Plink data file "+myFile)
+        return plinkList
+
+    def merge(self, stems, outPrefix, verbose=True):
+        snpTotal = len(open(stems[0]+".bim").readlines())
+        if verbose:
+            sys.stderr.write(time.asctime()+": Started.\n")
+        congruentSNPs = self.pIdentical(stems, ".bim")
+        if self.pIdentical(stems, ".bim") and self.pDisjoint(stems, ".fam"):
+            if verbose:
+                msg = "Found congruent SNPs, disjoint samples;"+\
+                    " starting merge.\n"
+                sys.stderr.write(msg)
+            bedPaths = []
+            samples = []
+            for stem in stems:
+                bedPaths.append(stem+".bed")
+                samples.append(len(open(stem+".fam").readlines()))
+            self.mergeBedCongruentSNPs(bedPaths, samples, outPrefix+".bed", 
+                                       snpTotal, verbose)
+            self.writeBimFamCongruentSNPs(stems, outPrefix)
+        elif self.pDisjoint(stems, ".bim") and self.pIdentical(stems, ".fam"):
+            if verbose:
+                msg = "Found disjoint SNPs, congruent samples;"+\
+                    " starting merge.\n"
+                sys.stderr.write(msg)
+            stems = self.sortStemsIlluminus(stems)
+            self.mergeBedCongruentSamples(stems, outPrefix+".bed", verbose)
+            self.writeBimFamCongruentSamples(stems, outPrefix)
+        else:
+            msg = "Merge conditions not satisfied; must have congruent SNPs"+\
+                " and disjoint samples, or disjoint SNPs and congruent samples."
+            raise ValueError(msg)
+        if verbose: 
+            sys.stderr.write(time.asctime()+": Finished.\n")
+
+    def mergeBedCongruentSamples(self, stems, outPath, verbose=True):
+        """Merge .bed files in SNP-major order, with identical samples
+
+        Null-padding occurs at end of each SNP, depends on number of samples
+        Therefore, inputs do not require decoding
+        """
+        maxSize = 50*(10**6) # read at most 50 MB
+        outFile = open(outPath, 'w')
+        outHead = False
+        for stem in stems:
+            bedFile = open(stem+".bed")
+            head = self.validateHeader(bedFile)
+            if not outHead: 
+                outFile.write(head)
+                outHead = True
+            bedFile.seek(3) # beginning of data blocks
+            while True:
+                contents = bedFile.read(maxSize)
+                if contents == '': break
+                else: outFile.write(contents)
+            bedFile.close()
+        outFile.close()
+
+    def mergeBedCongruentSNPs(self, inPaths, samples, outPath, snpTotal, 
+                              verbose=True):
+        """Merge .bed files in SNP-major order, with identical SNPs
 
         Arguments: paths to .bed files, and total numbers of samples per group
-        Inputs contain disjoint samples, identical SNPs"""
+        Assumes that inputs contain disjoint samples, identical SNPs"""
         inputTotal = len(inPaths)
         if inputTotal!=len(samples):
             msg = "Mismatched lengths of input path and samples lists"
@@ -406,11 +515,9 @@ class PlinkMerger(PlinkHandler):
                     # null-pad output to an integer number of bytes
                     calls.extend([0]*(4 - (len(calls) % 4))) 
                 outFile.write(''.join(self.callsToBinary(calls)))
-            if log!=None and ((i+1) % 10000 == 0 or i+1 == snpTotal):
-                msg = "Merged samples for probe %s of %s" % (i+1, snpTotal)
-                t = time.strftime(self.timeFormat, time.localtime())
-                log.write(t+" "+msg+"\n")
-                log.flush()
+            if verbose and ((i+1) % 10000 == 0 or i+1 == snpTotal):
+                msg = "Merged samples for probe %s of %s\n" % (i+1, snpTotal)
+                sys.stderr.write(msg)
         for i in range(inputTotal):
             if inFiles[i].read() != '':
                 msg = "Bytes found after final expected sample in "+inPaths[i]
@@ -419,37 +526,80 @@ class PlinkMerger(PlinkHandler):
                 inFiles[i].close()
         outFile.close()
 
-    def merge(self, stems, outPrefix, logPath=None):
-        bimPath = stems[0]+".bim"
-        snpTotal = len(open(bimPath).readlines())
-        if logPath!=None: 
-            log = open(logPath, 'w')
-            t = time.strftime(self.timeFormat, time.localtime())
-            log.write(t+" Started merge.\n")
-        else: 
-            log = None
-        for i in range(1, len(stems)):
-            otherBim = stems[i]+".bim"
-            if not self.filesIdentical(bimPath, otherBim):
-                raise ValueError("Non-identical .bim files!")
-        if log!=None:
-            t = time.strftime(self.timeFormat, time.localtime())
-            log.write(t+" Checked .bim files.\n")
-        bedPaths = []
-        samples = []
+    def sortStemsIlluminus(self, stems, verbose=True):
+        """Sort a list of Plink file stems into 'Illuminus' order
+
+        Illuminus output .bim paths do not necessarily include SNP coordinates
+        Instead, sort by filename
+        Names of the form [prefix].part.[number].[chromosome].bim
+        Chromosome is from (0-22, X, Y, XY, MT)
+
+        If names are not in Illuminus form, return in lexical sort order
+        """
+        sortable = True
+        sortMap = {}
         for stem in stems:
-            bedPaths.append(stem+".bed")
-            samples.append(len(open(stem+".fam").readlines()))
-        self.mergeBedSnpMajor(bedPaths, samples, outPrefix+".bed", 
-                              snpTotal, log)
-        # Write appropriate .bim, .fam files
+            terms = re.split('\.', stem)
+            if len(terms)<3:
+                if verbose:
+                    sys.stderr.write("Insufficient terms for Illuminus sort\n")
+                sortable = False; break
+            else:
+                part = terms[-2]
+                chrom = terms[-1]
+                if re.search('\D+', part): # contains non-numeric characters
+                    if verbose:
+                        msg = "Non-numeric characters in 'part' term\n"
+                        sys.stderr.write(msg)
+                    sortable = False; break
+                else:
+                    part = int(part)
+                if re.search('\D+', chrom):
+                    if chrom=='X': chrom = 23
+                    elif chrom=='Y': chrom = 24
+                    elif chrom=='XY': chrom = 25
+                    elif chrom=='MT': chrom = 26
+                    else: 
+                        if verbose:
+                            sys.stderr.write("Invalid chromosome name\n")
+                        sortable = False; break
+                else:
+                    chrom = int(chrom)
+                    if chrom < 0 or chrom > 26: 
+                        if verbose:
+                            msg = "Numeric chromosome "+str(chrom)+" in "+\
+                                stem+" outside valid range\n"
+                            sys.stderr.write(msg)
+                        sortable = False; break
+                sortMap[(chrom, part)] = stem
+        if sortable:
+            keyList = sortMap.keys()
+            keyList.sort()
+            sortedStems = []
+            for key in keyList: sortedStems.append(sortMap[key])
+        else:
+            if verbose:
+                sys.stderr.write("Cannot do Illuminus sort, using default.\n")
+            sortedStems = stems
+            sortedStems.sort()
+        return sortedStems
+
+    def writeBimFamCongruentSNPs(self, stems, outPrefix):
+        """Write .bim, .fam files for congruent SNPs, disjoint samples"""
         cmd = "cp %s %s" %  (stems[0]+".bim", outPrefix+".bim")
         os.system(cmd)
         famPaths = []
         for stem in stems: famPaths.append(stem+".fam")
         cmd = "cat "+" ".join(famPaths)+" > "+outPrefix+".fam"
         os.system(cmd)
-        if log!=None: 
-            t = time.strftime(self.timeFormat, time.localtime())
-            log.write(t+" Finished.\n")
-            log.close()
+
+    def writeBimFamCongruentSamples(self, sortedStems, outPrefix):
+        """Write .bim, .fam files for congruent samples, disjoint SNPs
+
+        Need to ensure stems are in same sort order as merged .bed files"""
+        cmd = "cp %s %s" %  (sortedStems[0]+".fam", outPrefix+".fam")
+        os.system(cmd)
+        bimPaths = []
+        for stem in sortedStems: bimPaths.append(stem+".bim")
+        cmd = "cat "+" ".join(bimPaths)+" > "+outPrefix+".bim"
+        os.system(cmd)
