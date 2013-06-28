@@ -29,7 +29,7 @@ See https://github.com/wtsi-npg/zCall
 
 import os, re, struct, sys, time
 from glob import glob
-from hashlib import md5
+from checksum import ChecksumFinder
 import json # used for temporary troubleshooting in equivalence test
 
 class PlinkHandler:
@@ -413,8 +413,9 @@ class PlinkMerger(PlinkHandler):
 
     def filesIdentical(self, path1, path2):
         """Compare md5 checksums of two files"""
-        sum1 = self.getMD5hex(path1)
-        sum2 = self.getMD5hex(path2)
+        csf = ChecksumFinder()
+        sum1 = csf.getMD5hex(path1)
+        sum2 = csf.getMD5hex(path2)
         return sum1==sum2
 
     def findBedStems(self, inputDir="."):
@@ -430,13 +431,6 @@ class PlinkMerger(PlinkHandler):
                 if not os.path.exists(myFile):
                     raise ValueError("Missing Plink data file "+myFile)
         return plinkList
-
-    def getMD5hex(self, inPath):
-        """Get MD5 checksum for contents of given file, in hex format"""
-        m = md5()
-        m.update(open(inPath).read())
-        checksum = m.hexdigest()
-        return checksum
 
     def merge(self, stems, outPrefix, sortBim=None, verbose=True):
         snpTotal = len(open(stems[0]+".bim").readlines())
