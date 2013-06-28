@@ -29,6 +29,8 @@ See https://github.com/wtsi-npg/zCall
 
 import os, re, struct, sys, time
 from glob import glob
+from hashlib import md5
+import json # used for temporary troubleshooting in equivalence test
 
 class PlinkHandler:
 
@@ -238,7 +240,7 @@ class PlinkEquivalenceTester(PlinkHandler):
             elif not flip and c2 == 3: equiv = True
         return equiv
 
-    def compare(self, stem1, stem2, verbose=False):
+    def compareBinary(self, stem1, stem2, verbose=False):
         """Compare two Plink binary datasets with given prefixes"""
         (famOK, samples) = self.famEquivalent(stem1+".fam", stem2+".fam", 
                                               verbose)
@@ -283,7 +285,12 @@ class PlinkEquivalenceTester(PlinkHandler):
                 if flip: c2 = c2[1]+c2[0]
                 if c1!=c2:
                     equiv = False
+                    if verbose:
+                        msg = "Non-equivalent genotypes at sample index "+\
+                            str(i)+", SNP index "+str(j)+": "+c1+", "+c2+"\n"
+                        sys.stderr.write(msg)
                     break
+            if not equiv: break
             i += 1
             if verbose and i % 10 == 0:
                 print "Read .ped line "+str(i)
@@ -366,22 +373,27 @@ class PlinkMerger(PlinkHandler):
     def __init__(self):
         pass
 
-    def pDisjoint(self, stems, suffix):
-        """Check if plink files with given suffix are all disjoint"""
-        plinkFiles = []
-        for stem in stems: plinkFiles.append(stem+suffix)
-        return self.filesDisjoint(plinkFiles)
+    def convertChromosome(self, chrom):
+        """Convert chromosome from string to numeric ID
 
-    def pIdentical(self, stems, suffix):
-        """Check if plink files with given suffix are all identical"""
-        ident = True
-        firstPlink = stems[0]+suffix
-        for i in range(1, len(stems)):
-            otherPlink = stems[i]+suffix
-            if not self.filesIdentical(firstPlink, otherPlink):
-                ident = False
-                break
-        return ident
+        Assumes the chromosome in question is human!"""
+        if re.search('\D+', chrom):
+            if chrom=='X': 
+                chrom = 23
+            elif chrom=='Y': 
+                chrom = 24
+            elif chrom=='XY': 
+                chrom = 25
+            elif chrom=='MT': 
+                chrom = 26
+            else:
+                raise ChromosomeNameError("Invalid chromosome name\n")
+        else:
+            chrom = int(chrom)
+            if chrom < 0 or chrom > 26: 
+                msg = "Numeric chromosome outside valid range\n"
+                raise ChromosomeNameError(msg)
+        return chrom
 
     def filesDisjoint(self, inPaths):
         """Check if files are disjoint, ie. no line occurs more than once
@@ -400,10 +412,10 @@ class PlinkMerger(PlinkHandler):
         return disjoint
 
     def filesIdentical(self, path1, path2):
-        cmd = "diff -q %s %s &> /dev/null" % (path1, path2)
-        status = os.system(cmd)
-        if status==0: return True
-        else: return False
+        """Compare md5 checksums of two files"""
+        sum1 = self.getMD5hex(path1)
+        sum2 = self.getMD5hex(path2)
+        return sum1==sum2
 
     def findBedStems(self, inputDir="."):
         """Find Plink binary stems (paths without .bed, .bim, .fam extension)"""
@@ -419,7 +431,14 @@ class PlinkMerger(PlinkHandler):
                     raise ValueError("Missing Plink data file "+myFile)
         return plinkList
 
-    def merge(self, stems, outPrefix, verbose=True):
+    def getMD5hex(self, inPath):
+        """Get MD5 checksum for contents of given file, in hex format"""
+        m = md5()
+        m.update(open(inPath).read())
+        checksum = m.hexdigest()
+        return checksum
+
+    def merge(self, stems, outPrefix, sortBim=None, verbose=True):
         snpTotal = len(open(stems[0]+".bim").readlines())
         if verbose:
             sys.stderr.write(time.asctime()+": Started.\n")
@@ -442,7 +461,8 @@ class PlinkMerger(PlinkHandler):
                 msg = "Found disjoint SNPs, congruent samples;"+\
                     " starting merge.\n"
                 sys.stderr.write(msg)
-            stems = self.sortStemsIlluminus(stems)
+            if sortBim!=None: stems = self.sortStemsInput(stems, sortBim)
+            else: stems = self.sortStemsIlluminus(stems)
             self.mergeBedCongruentSamples(stems, outPrefix+".bed", verbose)
             self.writeBimFamCongruentSamples(stems, outPrefix)
         else:
@@ -526,6 +546,49 @@ class PlinkMerger(PlinkHandler):
                 inFiles[i].close()
         outFile.close()
 
+    def pDisjoint(self, stems, suffix):
+        """Check if plink files with given suffix are all disjoint"""
+        plinkFiles = []
+        for stem in stems: plinkFiles.append(stem+suffix)
+        return self.filesDisjoint(plinkFiles)
+
+    def pIdentical(self, stems, suffix):
+        """Check if plink files with given suffix are all identical"""
+        ident = True
+        firstPlink = stems[0]+suffix
+        for i in range(1, len(stems)):
+            otherPlink = stems[i]+suffix
+            if not self.filesIdentical(firstPlink, otherPlink):
+                ident = False
+                break
+        return ident
+
+    def sortStemsInput(self, stems, bimPath, verbose=True):
+        """Sort a list of Plink file stems into same order as given .bim file
+
+        Use to reproduce Plink's default sort order for testing"""
+        snpOrder = {}
+        lines = open(bimPath).readlines()
+        for i in range(len(lines)):
+            snp = re.split('\s+', lines[i])[1]
+            snpOrder[snp] = i
+        sortMap = {}
+        for stem in stems:
+            # order stems by position of initial SNP
+            line = open(stem+".bim").readline()
+            snp = re.split('\s+', line)[1]
+            pos = snpOrder[snp]
+            sortMap[pos] = stem
+        sortKeys = sortMap.keys()
+        sortKeys.sort()
+        sortedStems = []
+        for key in sortKeys:
+            sortedStems.append(sortMap[key])
+        if verbose:
+            print "Inputs sorted in .bim order:"
+            for stem in sortedStems: print stem
+        return sortedStems
+
     def sortStemsIlluminus(self, stems, verbose=True):
         """Sort a list of Plink file stems into 'Illuminus' order
 
@@ -554,23 +617,12 @@ class PlinkMerger(PlinkHandler):
                     sortable = False; break
                 else:
                     part = int(part)
-                if re.search('\D+', chrom):
-                    if chrom=='X': chrom = 23
-                    elif chrom=='Y': chrom = 24
-                    elif chrom=='XY': chrom = 25
-                    elif chrom=='MT': chrom = 26
-                    else: 
-                        if verbose:
-                            sys.stderr.write("Invalid chromosome name\n")
-                        sortable = False; break
-                else:
-                    chrom = int(chrom)
-                    if chrom < 0 or chrom > 26: 
-                        if verbose:
-                            msg = "Numeric chromosome "+str(chrom)+" in "+\
-                                stem+" outside valid range\n"
-                            sys.stderr.write(msg)
-                        sortable = False; break
+                try:
+                    chrom = self.convertChromosome(chrom)
+                except ValueError:
+                    if verbose:
+                        sys.stderr.write("Invalid chromosome name\n")
+                    sortable = False; break
                 sortMap[(chrom, part)] = stem
         if sortable:
             keyList = sortMap.keys()
@@ -579,7 +631,7 @@ class PlinkMerger(PlinkHandler):
             for key in keyList: sortedStems.append(sortMap[key])
         else:
             if verbose:
-                sys.stderr.write("Cannot do Illuminus sort, using default.\n")
+                sys.stderr.write("Illuminus sort failed, using default.\n")
             sortedStems = stems
             sortedStems.sort()
         return sortedStems
@@ -603,3 +655,10 @@ class PlinkMerger(PlinkHandler):
         for stem in sortedStems: bimPaths.append(stem+".bim")
         cmd = "cat "+" ".join(bimPaths)+" > "+outPrefix+".bim"
         os.system(cmd)
+
+class ChromosomeNameError(Exception):
+    """Exception class to identify parse errors for chromosome names"""
+
+    def __init__(self, message, Errors):
+        # Call the base class constructor with the parameters it needs
+        Exception.__init__(self, message)
