@@ -28,7 +28,7 @@ stem1 = sys.argv[1]
 stem2 = sys.argv[2]
 
 pet = PlinkEquivalenceTester()
-ok = pet.compare(stem1, stem2, verbose=True)
+ok = pet.compareBinary(stem1, stem2, verbose=True)
 
-if ok: print "OK: .bed files match."
-else: print "NOT_OK: .bed files do not match!"
+if ok: print "OK: Binary datasets match."
+else: print "NOT_OK: Binary datasets do not match!"
