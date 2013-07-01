@@ -48,7 +48,7 @@ class TestPlink(unittest.TestCase):
         stemListPath = os.path.join(self.dataDir, 'congruent_samples.json')
         stemList = json.loads(open(stemListPath).read())
         prefix = 'merge_congruent_sample_test'
-        out = os.path.join(self.outDir, prefix)
+        out = os.path.join(self.outDir, prefix+'_list')
         pm = PlinkMerger()
         pm.merge(stemList, out, verbose=False)
         md5 = self.checksum.getMD5hex(out+".bed")
@@ -57,7 +57,9 @@ class TestPlink(unittest.TestCase):
         # same thing, but using glob instead of list to find inputs
         inputPrefix = os.path.join(self.dataDir, 'omnix_prcmd_20130624*')
         stemList = pm.findBedStems(inputPrefix)
+        out = os.path.join(self.outDir, prefix+'_glob')
         pm.merge(stemList, out, verbose=False)
+        md5 = self.checksum.getMD5hex(out+".bed")
         self.assertEqual(md5, '9931ab854c92e2efcffb48ec2480f2bb')
         self.validatePlink(out)
 
