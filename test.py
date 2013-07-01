@@ -49,8 +49,15 @@ class TestPlink(unittest.TestCase):
         stemList = json.loads(open(stemListPath).read())
         prefix = 'merge_congruent_sample_test'
         out = os.path.join(self.outDir, prefix)
-        PlinkMerger().merge(stemList, out, verbose=False)
+        pm = PlinkMerger()
+        pm.merge(stemList, out, verbose=False)
         md5 = self.checksum.getMD5hex(out+".bed")
+        self.assertEqual(md5, '9931ab854c92e2efcffb48ec2480f2bb')
+        self.validatePlink(out)
+        # same thing, but using glob instead of list to find inputs
+        inputPrefix = os.path.join(self.dataDir, 'omnix_prcmd_20130624*')
+        stemList = pm.findBedStems(inputPrefix)
+        pm.merge(stemList, out, verbose=False)
         self.assertEqual(md5, '9931ab854c92e2efcffb48ec2480f2bb')
         self.validatePlink(out)
 
@@ -70,13 +77,13 @@ class TestPlink(unittest.TestCase):
         self.validatePlink(out)
 
     def validatePlink(self, stem, cleanup=True):
-        """Run Plink on given dataset
+        """Run Plink on given binary dataset
 
         Just checks that Plink runs without crashing, not detailed validation"""
         self.assertEqual(os.system('plink --bfile '+stem+' > /dev/null'), 0)
         if cleanup:
             plinkFiles = ['.pversion', 'plink.hh', 'plink.log', 'plink.nof', 
-                     'plink.nosex', 'plink.nof']
+                          'plink.nosex', 'plink.nof']
             for pFile in plinkFiles: 
                 if os.path.exists(pFile): os.remove(pFile)
 
