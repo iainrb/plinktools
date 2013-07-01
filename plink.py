@@ -89,6 +89,26 @@ class PlinkHandler:
         byteString = byteString[::-1] # reverse order of string characters
         return int(byteString, 2)    
 
+    def checkStem(self, stem):
+        """Check if given file stem is a valid binary or non-binary datset
+
+        If both types are present, binary takes precedence
+        Only checks for existence of files, not readability or correctness"""
+        binarySuffixes = ['.bed', '.bim', '.fam']
+        nonBinarySuffixes = ['.ped', '.map']
+        valid = True
+        binary = True
+        for suffix in binarySuffixes: 
+            if not os.path.exists(stem+suffix):
+                binary = False
+                break
+        if not binary:
+            for suffix in nonBinarySuffixes:
+                if not os.path.exists(stem+suffix):
+                    valid = False # neither binary nor non-binary exists
+                    break
+        return (valid, binary)
+
     def findBlockSize(self, sampleTotal):
         """Find number of bytes for each SNP
 
@@ -239,21 +259,21 @@ class PlinkEquivalenceTester(PlinkHandler):
         (famOK, samples) = self.famEquivalent(stem1+".fam", stem2+".fam", 
                                               verbose)
         if not famOK: 
-            if verbose: sys.stderr.write("Mismatched .fam files!")
+            if verbose: sys.stderr.write("Mismatched .fam files!\n")
             return False
         (bimOK, flip) = self.bimEquivalent(stem1+".bim", stem2+".bim", verbose)
         if not bimOK:
-            if verbose: sys.stderr.write("Mismatched .bim files!")
+            if verbose: sys.stderr.write("Mismatched .bim files!\n")
             return False
         bedOK = self.bedEquivalent(stem1+".bed", stem2+".bed", 
                                    flip, samples, verbose)
         if not bedOK:
-            if verbose: sys.stderr.write("Mismatched .bed files!")
+            if verbose: sys.stderr.write("Mismatched .bed files!\n")
             return False
         else:
             return True
 
-    def comparePed(self, pedPath1, pedPath2, flip=True, verbose=True):
+    def comparePed(self, pedPath1, pedPath2, flip=True, verbose=False):
         """Compare two .ped files
 
         If flip==True, assume major/minor alleles in one input are swapped
