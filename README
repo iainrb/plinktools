@@ -1,7 +1,56 @@
-Plinktools: Python code for I/O of Plink genotyping files
+Plinktools: Python code to process Plink genotyping files
 
 Author: Iain Bancarz, ib5@sanger.ac.uk
 
-Plinktools was created to support the WTSI genotyping pipeline: https://github.com/wtsi-npg/genotyping
+1. INTRODUCTION
 
-The Plink data format was created by Shaun Purcell et al. See: http://pngu.mgh.harvard.edu/~purcell/plink
+Plinktools is a Python package for processing Plink format genotyping data. It 
+was developed for two applications not supported by the standard Plink 
+executable.
+
+1.1 Equivalence test
+
+Plink does not directly support an equivalence test on two datasets. The 
+--merge option does allow a diff on SNP calls, but this does not check whether 
+the SNP and sample sets match. In addition, certain Plink operations (such as 
+merge) may transpose the major and minor alleles in a SNP set, and such a 
+transpose is regarded as a mismatch by the Plink diff.
+
+Plinktools allows an equivalence test on pairs of binary or non-binary Plink 
+files, with major/minor allele swaps regarded as matching.
+
+1.2 Fast binary merge
+
+The standard Plink merge function performs extended cross-checking and recoding 
+of data. This is rather slow, and does not scale well with an increasing 
+number of inputs.
+
+To address this issue, Plinktools implements a fast binary merge for two 
+important special cases: Congruent SNP sets with disjoint samples, and 
+congruent samples with disjoint SNPs. In both cases, input and output is in 
+the default SNP-major format. In the case of congruent samples, the fast 
+merge strips off headers and concatenates the input .bed files with no need 
+for recoding. For congruent SNPs, a fast merge can be done if the number of 
+samples in each input is divisible by 4; otherwise recoding is necessary and 
+the merge will be slowed, although still somewhat faster than Plink.
+
+2. USAGE
+
+Plinktools includes two front-end scripts:
+
+compare.py to compare two Plink datasets (binary or non-binary)
+
+merge.py to merge two or more Plink binary datasets
+
+Run either script with --help for more information.
+
+3. SEE ALSO
+
+The Plink data format was created by Shaun Purcell et al. See: 
+http://pngu.mgh.harvard.edu/~purcell/plink
+
+Plinktools was created to support the WTSI genotyping pipeline: 
+https://github.com/wtsi-npg/genotyping
+
+Plinktools is a prerequisite for the WTSI extension of the zCall genotype 
+caller: https://github.com/wtsi-npg/zCall
