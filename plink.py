@@ -34,11 +34,10 @@ import json # used for temporary troubleshooting in equivalence test
 
 class PlinkHandler:
 
-    """Read/write plink data for zcall"""
+    """General purpose class to read/write plink data for zcall"""
 
-    def __init__(self, snpTotal):
-        """Assume snp-major input; different samples, same SNP set"""
-        self.snpTotal = snpTotal
+    def __init__(self):
+        pass
 
     def blockToCalls(self, block, remainder):
         """Convert a binary 'block' of data to call codes
@@ -140,7 +139,6 @@ class PlinkHandler:
         return head
 
 class PlinkEquivalenceTester(PlinkHandler):
-
     """Test equivalence of two Plink datasets
 
     Plink executable can do diff on SNP calls, but this doesn't check 
@@ -149,18 +147,14 @@ class PlinkEquivalenceTester(PlinkHandler):
 
     This class can compare binary datasets or non-binary .ped files"""
 
-    def __init__(self):
-        """Overrides parent class -- snp total is not an instance variable"""
-        pass
-
-    def bedEquivalent(self, bedPath1, bedPath2, flip, snpTotal, samples, 
+    def bedEquivalent(self, bedPath1, bedPath2, flip, samples, 
                       verbose=True):
         """Check equivalence of calls in .bed files
 
         ASSUMPTIONS:
         - SNP sets are identical to within allele flips
         - Sample sets are identical
-        flip argument is array of 0 for no flip, 1 for flip
+        flip argument is array of 0 for no flip, 1 for flip on each SNP value
         snpTotal, samples arguments are total number of snps, samples"""
         blockSize = self.findBlockSize(samples)
         bed1 = open(bedPath1)
@@ -169,7 +163,7 @@ class PlinkEquivalenceTester(PlinkHandler):
         bed2.seek(3)
         equiv = True
         remainder = samples % 4
-        for i in range(snpTotal):
+        for i in range(len(flip)):
             calls1 = self.blockToCalls(bed1.read(blockSize), remainder)
             calls2 = self.blockToCalls(bed2.read(blockSize), remainder)
             for j in range(len(calls1)):
@@ -210,7 +204,7 @@ class PlinkEquivalenceTester(PlinkHandler):
                         msg = "Mismatched SNP names at index "+str(i)+"\n"
                         sys.stderr.write(msg)
                 elif a1a==a2a and a1b==a2b:
-                    pass # flip[i] = 0
+                    pass # flip[i] kept as 0
                 elif a1a==a2b and a1b==a2a:
                     flip[i] = 1
                 else:
@@ -219,7 +213,7 @@ class PlinkEquivalenceTester(PlinkHandler):
                         msg = "Allele values for SNP index "+str(i)+\
                             "incompatible with flip!\n"
                         sys.stderr.write(msg)
-        return (equiv, flip, snpTotal)
+        return (equiv, flip)
 
     def callsEquivalent(self, c1, c2, flip):
         """Compare call codes for equivalence
@@ -247,14 +241,12 @@ class PlinkEquivalenceTester(PlinkHandler):
         if not famOK: 
             if verbose: sys.stderr.write("Mismatched .fam files!")
             return False
-        (bimOK, flip, snpTotal) = self.bimEquivalent(stem1+".bim", stem2+".bim",
-                                                     verbose)
+        (bimOK, flip) = self.bimEquivalent(stem1+".bim", stem2+".bim", verbose)
         if not bimOK:
             if verbose: sys.stderr.write("Mismatched .bim files!")
             return False
         bedOK = self.bedEquivalent(stem1+".bed", stem2+".bed", 
-                                   flip, snpTotal, samples,
-                                   verbose)
+                                   flip, samples, verbose)
         if not bedOK:
             if verbose: sys.stderr.write("Mismatched .bed files!")
             return False
@@ -265,6 +257,7 @@ class PlinkEquivalenceTester(PlinkHandler):
         """Compare two .ped files
 
         If flip==True, assume major/minor alleles in one input are swapped
+        (Unlike compareBed, flip status is an 'all-or-nothing' option)
         Note that .ped files are sample-major by default
         """
         in1 = open(pedPath1)
@@ -275,10 +268,10 @@ class PlinkEquivalenceTester(PlinkHandler):
             calls1 = self.parsePedLine(in1.readline())
             calls2 = self.parsePedLine(in2.readline())
             if calls1==None:
-                if calls2!=None: raise ValueError
+                if calls2!=None: raise ValueError("Inputs of unequal length!")
                 else: break
             elif len(calls1)!=len(calls2):
-                raise ValueError
+                raise ValueError("SNP sets of unequal length!")
             for j in range(len(calls1)):
                 c1 = calls1[j]
                 c2 = calls2[j]
@@ -292,7 +285,7 @@ class PlinkEquivalenceTester(PlinkHandler):
                     break
             if not equiv: break
             i += 1
-            if verbose and i % 10 == 0:
+            if verbose and i % 20 == 0:
                 print "Read .ped line "+str(i)
                 sys.stdout.flush()
         in1.close()
@@ -366,12 +359,11 @@ class PlinkMerger(PlinkHandler):
 
     """Class to merge Plink datasets
 
-    Merge for identical SNP sets, disjoint samples
+    Merge for:
+      - identical SNP sets, disjoint samples; or
+      - disjoint SNP sets, identical samples
     Omits cross-checking in Plink, but faster, especially for multiple inputs
     """
-
-    def __init__(self):
-        pass
 
     def convertChromosome(self, chrom):
         """Convert chromosome from string to numeric ID
@@ -418,9 +410,9 @@ class PlinkMerger(PlinkHandler):
         sum2 = csf.getMD5hex(path2)
         return sum1==sum2
 
-    def findBedStems(self, inputDir="."):
+    def findBedStems(self, prefix="."):
         """Find Plink binary stems (paths without .bed, .bim, .fam extension)"""
-        bedList = glob(inputDir+"/*.bed")
+        bedList = glob(prefix+"*.bed")
         bedList.sort()
         plinkList = []
         for bed in bedList:
