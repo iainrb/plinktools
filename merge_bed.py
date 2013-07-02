@@ -28,7 +28,7 @@ def main():
     description = "Merge two or more Plink binary datasets. Inputs must have either disjoint samples and congruent SNPs, or congruent SNPs and disjoint samples."
     epilog = "Default behaviour is to merge all plink binary datasets in the current working directory. Can change directory and file prefix using --prefix or specify a list of datasets using --stems. Specifying both --prefix and --stems is not permitted."
     parser = argparse.ArgumentParser(description=description, epilog=epilog)
-    parser.add_argument('--stems', required=False, metavar="PATH", 
+    parser.add_argument('--list', required=False, metavar="PATH", 
                         help="Path to .json file listing Plink stems (paths without .bed, .bim, .fam extension). Optional, see below.")
     parser.add_argument('--prefix', required=False, metavar="PATH", 
                         default=None,
@@ -39,11 +39,11 @@ def main():
                         help="Path to .bim file for SNP sort order, used in case with congruent SNPs and disjoint samples. Optional, uses default sort if absent.")
     args = vars(parser.parse_args())
     pm = PlinkMerger()
-    if args['stems']!=None:
+    if args['list']!=None:
         if args['prefix']!=None:
-            raise ValueError("Can specify at most one of --stems, --prefix")
+            raise ValueError("Can specify at most one of --list, --prefix")
         else:
-            stemList = json.loads(open(args['stems']).read())
+            stemList = json.loads(open(args['list']).read())
     else:
         if args['prefix']==None: inputPrefix = "."
         else: inputPrefix = args['prefix']
