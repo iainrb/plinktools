@@ -618,16 +618,17 @@ class PlinkMerger(PlinkHandler):
                 chrom = terms[-1]
                 if re.search('\D+', part): # contains non-numeric characters
                     if verbose:
-                        msg = "Non-numeric characters in 'part' term\n"
+                        msg = "Non-numeric characters in 'part' term: \""+\
+                            part+"\"\n"
                         sys.stderr.write(msg)
                     sortable = False; break
                 else:
                     part = int(part)
                 try:
                     chrom = self.convertChromosome(chrom)
-                except ValueError:
+                except ChromosomeNameError:
                     if verbose:
-                        sys.stderr.write("Invalid chromosome name\n")
+                        sys.stderr.write("Cannot sort chromosomes\n")
                     sortable = False; break
                 sortMap[(chrom, part)] = stem
         if sortable:
