@@ -37,6 +37,8 @@ def main():
                         help="Plink stem (path without .bed, .bim, .fam extension) for merged output. Required.")
     parser.add_argument('--bim', metavar="PATH", 
                         help="Path to .bim file for SNP sort order, used in case with congruent SNPs and disjoint samples. Optional, uses default sort if absent.")
+    parser.add_argument('--verbose', action="store_true", 
+                        help="Print additional information to standard output/error.")
     args = vars(parser.parse_args())
     pm = PlinkMerger()
     if args['list']!=None:
@@ -48,7 +50,7 @@ def main():
         if args['prefix']==None: inputPrefix = "."
         else: inputPrefix = args['prefix']
         stemList = pm.findBedStems(inputPrefix)
-    pm.merge(stemList, args['out'], args['bim'])
+    pm.merge(stemList, args['out'], args['bim'], args['verbose'])
 
 if __name__ == "__main__":
     main()
