@@ -444,7 +444,7 @@ class PlinkMerger(PlinkHandler):
                     raise ValueError("Missing Plink data file "+myFile)
         return plinkList
 
-    def merge(self, stems, outPrefix, sortBim=None, verbose=True):
+    def merge(self, stems, outPrefix, bim=None, verbose=False):
         snpTotal = len(open(stems[0]+".bim").readlines())
         if verbose:
             sys.stderr.write(time.asctime()+": Started.\n")
@@ -467,8 +467,8 @@ class PlinkMerger(PlinkHandler):
                 msg = "Found disjoint SNPs, congruent samples;"+\
                     " starting merge.\n"
                 sys.stderr.write(msg)
-            if sortBim!=None: stems = self.sortStemsInput(stems, sortBim)
-            else: stems = self.sortStemsIlluminus(stems)
+            if bim!=None: stems = self.sortStemsInput(stems, bim, verbose)
+            else: stems = self.sortStemsIlluminus(stems, verbose)
             self.mergeBedCongruentSamples(stems, outPrefix+".bed", verbose)
             self.writeBimFamCongruentSamples(stems, outPrefix)
         else:
@@ -478,7 +478,7 @@ class PlinkMerger(PlinkHandler):
         if verbose: 
             sys.stderr.write(time.asctime()+": Finished.\n")
 
-    def mergeBedCongruentSamples(self, stems, outPath, verbose=True):
+    def mergeBedCongruentSamples(self, stems, outPath, verbose=False):
         """Merge .bed files in SNP-major order, with identical samples
 
         Null-padding occurs at end of each SNP, depends on number of samples
@@ -569,7 +569,7 @@ class PlinkMerger(PlinkHandler):
                 break
         return ident
 
-    def sortStemsInput(self, stems, bimPath, verbose=True):
+    def sortStemsInput(self, stems, bimPath, verbose=False):
         """Sort a list of Plink file stems into same order as given .bim file
 
         Use to reproduce Plink's default sort order for testing"""
@@ -595,7 +595,7 @@ class PlinkMerger(PlinkHandler):
             for stem in sortedStems: print stem
         return sortedStems
 
-    def sortStemsIlluminus(self, stems, verbose=True):
+    def sortStemsIlluminus(self, stems, verbose=False):
         """Sort a list of Plink file stems into 'Illuminus' order
 
         Illuminus output .bim paths do not necessarily include SNP coordinates
