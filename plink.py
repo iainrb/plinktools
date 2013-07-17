@@ -27,10 +27,9 @@ See https://github.com/wtsi-npg/zCall
 """
 
 
-import os, re, struct, sys, time
+import json, os, re, struct, sys, time
 from glob import glob
 from checksum import ChecksumFinder
-import json # used for temporary troubleshooting in equivalence test
 
 class PlinkHandler:
 
@@ -670,7 +669,7 @@ class MafHetFinder(PlinkHandler):
     Use to apply het filter separately to high/low MAF, eg. for exome chips"""
 
     def mafSplitHetCounts(self, bedPath, samples, snpTotal, mafThreshold=0.01,
-                          verbose=True):
+                          verbose=False):
         """Find het rates on SNPs above/below MAF threshold for each sample
 
         Populate an array: [low total, low het, high total, high het]"""
@@ -709,14 +708,50 @@ class MafHetFinder(PlinkHandler):
         if maf > 0.5: maf = 1 - maf # by definition, MAF is less frequent
         return maf
 
-    def writeMafSplitHet(self, outPath, bedPath, samples, snpTotal, 
-                         mafThreshold=0.01, verbose=True, digits=6):
+    def readSampleNames(self, famPath):
+        """Read sample names from Plink .fam file"""
+        famLines = open(famPath).readlines()
+        names = []
+        for line in famLines:
+            names.append(re.split('\s+', line.strip()).pop(0))
+        return names
+
+    def runJson(self, outPath, bedPath, famPath, 
+                snpTotal, mafThreshold=0.01, verbose=False, digits=6):
+        """Run MAF/het calculation and write JSON output """
+        sampleNames = self.readSampleNames(famPath)
+        countInfo = self.mafSplitHetCounts(bedPath, len(sampleNames), 
+                                           snpTotal, mafThreshold, verbose)
+        self.writeJson(outPath, countInfo, sampleNames, snpTotal, mafThreshold, 
+                       verbose)
+
+    def writeJson(self, outPath, countInfo, sampleNames, 
+                  snpTotal, mafThreshold=0.01, verbose=False, digits=6):
+        """Find heterozygosity for high/low MAF and write to .json
+
+        .json format is similar to qc_results.json in genotyping PL"""
+        samples = len(sampleNames)
+        (lowTotal, highTotal, counts) = countInfo
+        lowTotal = float(lowTotal)
+        highTotal = float(highTotal)
+        output = {}
+        for i in range(samples):
+            try: lmh = counts[i][0]/lowTotal # low MAF het
+            except ZeroDivisionError: lmh = 0
+            try: hmh = counts[i][1]/highTotal # high MAF het
+            except ZeroDivisionError: hmh = 0
+            result = { 'low_maf_het':[1, lmh], 'high_maf_het':[1, hmh]}
+            output[sampleNames[i]] = result
         out = open(outPath, 'w')
-        out.write("#INPUT:%s\n" % (bedPath,))
+        json.dump(output, out)
+        out.close()
+        
+    def writeText(self, outPath, countInfo, samples, snpTotal, 
+                  mafThreshold=0.01, verbose=False, digits=6):
+        """Find heterozygosity for high/low MAF and write to text"""
+        out = open(outPath, 'w')
         out.write("#MAF_THRESHOLD:%s\n" % (mafThreshold,))
-        info = self.mafSplitHetCounts(bedPath, samples, snpTotal,     
-                                      mafThreshold, verbose)
-        (lowTotal, highTotal, counts) = info
+        (lowTotal, highTotal, counts) = countInfo
         out.write("#LOW_MAF_TOTAL:%s\n" % (lowTotal,))
         out.write("#HIGH_MAF_TOTAL:%s\n" % (highTotal,))
         out.write("#LOW_MAF_HET\tHIGH_MAF_HET\tALL_HET\n")
