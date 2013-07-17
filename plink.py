@@ -709,11 +709,13 @@ class MafHetFinder(PlinkHandler):
         return maf
 
     def readSampleNames(self, famPath):
-        """Read sample names from Plink .fam file"""
+        """Read sample individual names from Plink .fam file
+
+        First field in .fam line is family name, second is individual name"""
         famLines = open(famPath).readlines()
         names = []
         for line in famLines:
-            names.append(re.split('\s+', line.strip()).pop(0))
+            names.append(re.split('\s+', line.strip()).pop(1))
         return names
 
     def runJson(self, outPath, bedPath, famPath, 
