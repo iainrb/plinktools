@@ -20,7 +20,7 @@
 import json, os, sys, unittest
 
 from tempfile import mkdtemp
-from plink import PlinkEquivalenceTester, PlinkMerger
+from plink import MafHetFinder, PlinkEquivalenceTester, PlinkMerger
 from checksum import ChecksumFinder
 
 class TestPlink(unittest.TestCase):
@@ -40,6 +40,23 @@ class TestPlink(unittest.TestCase):
         stem3 = os.path.join(self.dataDir, 'samples_part_101_small')
         match = pet.compareBinary(stem1, stem3)
         self.assertFalse(match)
+
+    def test_maf_het(self):
+        """Test het calculation on high/low maf"""
+        stem = os.path.join(self.dataDir, 'samples_part_100_small')
+        outJson = os.path.join(self.outDir, 'het_by_maf.json')
+        outText = os.path.join(self.outDir, 'het_by_maf.txt')
+        mhf = MafHetFinder()
+        samples = 25
+        snps = 538448
+        countInfo = mhf.mafSplitHetCounts(stem+".bed", samples, snps)
+        sampleNames = mhf.readSampleNames(stem+".fam")
+        mhf.writeJson(outJson, countInfo, sampleNames, snps)
+        md5 = self.checksum.getMD5hex(outJson)
+        self.assertEqual(md5, '3bac3f56b41b49c182605bf92de3a5bf')
+        mhf.writeText(outText, countInfo, samples, snps)
+        md5 = self.checksum.getMD5hex(outText)
+        self.assertEqual(md5, '594ab40eadf9e61f9599c477556d3ea4')
 
     def test_merge_congruent_samples(self):
         """Merge a set of 49 .bed datasets with 1162 samples
