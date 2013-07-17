@@ -27,10 +27,9 @@ See https://github.com/wtsi-npg/zCall
 """
 
 
-import os, re, struct, sys, time
+import json, os, re, struct, sys, time
 from glob import glob
 from checksum import ChecksumFinder
-import json # used for temporary troubleshooting in equivalence test
 
 class PlinkHandler:
 
@@ -175,7 +174,7 @@ class PlinkEquivalenceTester(PlinkHandler):
         - SNP sets are identical to within allele flips
         - Sample sets are identical
         flip argument is array of 0 for no flip, 1 for flip on each SNP value
-        snpTotal, samples arguments are total number of snps, samples"""
+        samples argument = total number of samples"""
         blockSize = self.findBlockSize(samples)
         bed1 = open(bedPath1)
         bed2 = open(bedPath2)
@@ -662,6 +661,121 @@ class PlinkMerger(PlinkHandler):
         for stem in sortedStems: bimPaths.append(stem+".bim")
         cmd = "cat "+" ".join(bimPaths)+" > "+outPrefix+".bim"
         os.system(cmd)
+
+class MafHetFinder(PlinkHandler):
+    """Class to find autosome heterozygosity, split by MAF
+
+    Assumes SNP-major input
+    Use to apply het filter separately to high/low MAF, eg. for exome chips"""
+
+    def mafSplitHetCounts(self, bedPath, samples, snpTotal, mafThreshold=0.01,
+                          verbose=False):
+        """Find het rates on SNPs above/below MAF threshold for each sample
+
+        Populate an array: [low total, low het, high total, high het]"""
+        counts = [None]*samples
+        for i in range(samples): counts[i] = [0]*2
+        highTotal = 0
+        lowTotal = 0
+        blockSize = self.findBlockSize(samples)
+        remainder = samples % 4
+        bed = open(bedPath)
+        bed.seek(3) # skip headers
+        for i in range(snpTotal):
+            calls = self.blockToCalls(bed.read(blockSize), remainder)
+            maf = self.findMAF(calls) # MAF for this SNP
+            if maf <= mafThreshold: lowTotal += 1
+            else: highTotal += 1
+            for j in range(len(calls)):
+                if calls[j]==2: # heterozygote
+                    if maf <= mafThreshold: counts[j][0] += 1
+                    else: counts[j][1] += 1
+            if verbose and (i+1) % 10000 == 0:
+                print "Found MAF for SNP", i+1, "of", snpTotal
+        bed.close()
+        return (lowTotal, highTotal, counts)
+
+    def findMAF(self, calls):
+        """Find minor allele frequency from a given set of calls"""
+        totalCalls = 0 # total non-null calls for this SNP
+        minorCalls = 0 # total 'B' allele calls
+        for call in calls:
+            if call==0: continue
+            totalCalls += 2 # count both alleles towards total
+            if call==2: minorCalls+=1 # minor het
+            elif call==3: minorCalls+=2 # minor hom
+        maf = minorCalls/float(totalCalls)
+        if maf > 0.5: maf = 1 - maf # by definition, MAF is less frequent
+        return maf
+
+    def readSampleNames(self, famPath):
+        """Read sample names from Plink .fam file"""
+        famLines = open(famPath).readlines()
+        names = []
+        for line in famLines:
+            names.append(re.split('\s+', line.strip()).pop(0))
+        return names
+
+    def runJson(self, outPath, bedPath, famPath, 
+                snpTotal, mafThreshold=0.01, verbose=False, digits=6):
+        """Run MAF/het calculation and write JSON output """
+        sampleNames = self.readSampleNames(famPath)
+        countInfo = self.mafSplitHetCounts(bedPath, len(sampleNames), 
+                                           snpTotal, mafThreshold, verbose)
+        self.writeJson(outPath, countInfo, sampleNames, snpTotal, mafThreshold, 
+                       verbose)
+
+    def runText(self, outPath, bedPath, famPath, 
+                snpTotal, mafThreshold=0.01, verbose=False, digits=6):
+        """Run MAF/het calculation and write plain text output """
+        samples = len(self.readSampleNames(famPath))
+        countInfo = self.mafSplitHetCounts(bedPath, samples, 
+                                           snpTotal, mafThreshold, verbose)
+        self.writeText(outPath, countInfo, samples, snpTotal, mafThreshold, 
+                       verbose)
+
+    def writeJson(self, outPath, countInfo, sampleNames, 
+                  snpTotal, mafThreshold=0.01, verbose=False, digits=6):
+        """Find heterozygosity for high/low MAF and write to .json
+
+        .json format is similar to qc_results.json in genotyping PL"""
+        samples = len(sampleNames)
+        (lowTotal, highTotal, counts) = countInfo
+        lowTotal = float(lowTotal)
+        highTotal = float(highTotal)
+        output = {}
+        for i in range(samples):
+            try: lmh = counts[i][0]/lowTotal # low MAF het
+            except ZeroDivisionError: lmh = 0
+            try: hmh = counts[i][1]/highTotal # high MAF het
+            except ZeroDivisionError: hmh = 0
+            result = { 'low_maf_het':[1, lmh], 'high_maf_het':[1, hmh]}
+            output[sampleNames[i]] = result
+        out = open(outPath, 'w')
+        json.dump(output, out)
+        out.close()
+        
+    def writeText(self, outPath, countInfo, samples, snpTotal, 
+                  mafThreshold=0.01, verbose=False, digits=6):
+        """Find heterozygosity for high/low MAF and write to text"""
+        out = open(outPath, 'w')
+        out.write("#MAF_THRESHOLD:%s\n" % (mafThreshold,))
+        (lowTotal, highTotal, counts) = countInfo
+        out.write("#LOW_MAF_TOTAL:%s\n" % (lowTotal,))
+        out.write("#HIGH_MAF_TOTAL:%s\n" % (highTotal,))
+        out.write("#LOW_MAF_HET\tHIGH_MAF_HET\tALL_HET\n")
+        lowTotal = float(lowTotal)
+        highTotal = float(highTotal)
+        snpTotal = float(snpTotal)
+        for i in range(samples):
+            try: lmh = counts[i][0]/lowTotal # low MAF het
+            except ZeroDivisionError: lmh = 0
+            try: hmh = counts[i][1]/highTotal # high MAF het
+            except ZeroDivisionError: hmh = 0
+            allHet = (counts[i][0] + counts[i][1])/snpTotal
+            out.write("%s\t%s\t%s\n" % (round(lmh, digits), round(hmh, digits),
+                                        round(allHet, digits)))
+        out.close()
 
 class ChromosomeNameError(Exception):
     """Exception class to identify parse errors for chromosome names"""
