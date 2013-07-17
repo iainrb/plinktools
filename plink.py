@@ -725,6 +725,15 @@ class MafHetFinder(PlinkHandler):
         self.writeJson(outPath, countInfo, sampleNames, snpTotal, mafThreshold, 
                        verbose)
 
+    def runText(self, outPath, bedPath, famPath, 
+                snpTotal, mafThreshold=0.01, verbose=False, digits=6):
+        """Run MAF/het calculation and write plain text output """
+        samples = len(self.readSampleNames(famPath))
+        countInfo = self.mafSplitHetCounts(bedPath, samples, 
+                                           snpTotal, mafThreshold, verbose)
+        self.writeText(outPath, countInfo, samples, snpTotal, mafThreshold, 
+                       verbose)
+
     def writeJson(self, outPath, countInfo, sampleNames, 
                   snpTotal, mafThreshold=0.01, verbose=False, digits=6):
         """Find heterozygosity for high/low MAF and write to .json

@@ -26,15 +26,18 @@ from plink import MafHetFinder
 def main():
     """Method to run as script from command line"""
     description = "Find heterozygosoity separately for SNPs with high/low minor allele frequency (MAF)."
-    outDefault = "het_by_maf.json"
+    outDefaultJson = "het_by_maf.json"
+    outDefaultText = "het_by_maf.txt"
     mafThreshold = 0.01
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument('--in', required=True, metavar="PATH", 
                         help="Plink binary stem (path without .bed, .bim, .fam extension) for input. Required.")
-    parser.add_argument('--out', metavar="PATH", default=outDefault,
-                        help="Path for .json output. Optional, defaults to "+outDefault+" in current working directory.")
+    parser.add_argument('--out', metavar="PATH", default=outDefaultJson,
+                        help="Path for output. Optional, defaults to "+outDefaultJson+" in current working directory (unless --text is specified).")
     parser.add_argument('--threshold', metavar="NUM", default=mafThreshold, 
                         type=float, help="Threshold between 0 and 1 for the boundary between high and low minor allele frequency groups. Optional, defaults to "+str(mafThreshold)+".")
+    parser.add_argument('--text', action="store_true", 
+                        help="Write output in plain text format instead of default .json; changes default output to "+outDefaultText+".")
     parser.add_argument('--verbose', action="store_true", 
                         help="Print additional information to standard output/error.")
     args = vars(parser.parse_args())
@@ -56,8 +59,13 @@ def main():
     stem = os.path.abspath(args['in'])
     snpTotal = len(open(stem+".bim").readlines())
     mhf = MafHetFinder()
-    mhf.runJson(args['out'], stem+".bed", stem+".fam", snpTotal,
-                mafThreshold, args['verbose'])
+    if args['text']:
+        if args['out'] == outDefaultJson: args['out'] = outDefaultText 
+        mhf.runText(args['out'], stem+".bed", stem+".fam", snpTotal,
+                    mafThreshold, args['verbose'])
+    else:
+        mhf.runJson(args['out'], stem+".bed", stem+".fam", snpTotal,
+                    mafThreshold, args['verbose'])
 
 if __name__ == "__main__":
     main()
