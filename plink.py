@@ -749,7 +749,8 @@ class MafHetFinder(PlinkHandler):
             except ZeroDivisionError: lmh = 0
             try: hmh = counts[i][1]/highTotal # high MAF het
             except ZeroDivisionError: hmh = 0
-            result = { 'low_maf_het':[1, lmh], 'high_maf_het':[1, hmh]}
+            result = { 'low_maf_het':[1, round(lmh, digits)], 
+                       'high_maf_het':[1, round(hmh, digits)]}
             output[sampleNames[i]] = result
         out = open(outPath, 'w')
         json.dump(output, out)
