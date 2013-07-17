@@ -26,13 +26,13 @@ from plink import MafHetFinder
 def main():
     """Method to run as script from command line"""
     description = "Find heterozygosoity separately for SNPs with high/low minor allele frequency (MAF)."
-    outDefault = "het_by_maf.txt"
+    outDefault = "het_by_maf.json"
     mafThreshold = 0.01
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument('--in', required=True, metavar="PATH", 
                         help="Plink binary stem (path without .bed, .bim, .fam extension) for input. Required.")
     parser.add_argument('--out', metavar="PATH", default=outDefault,
-                        help="Path for .txt output. Optional, defaults to "+outDefault+" in current working directory.")
+                        help="Path for .json output. Optional, defaults to "+outDefault+" in current working directory.")
     parser.add_argument('--threshold', metavar="NUM", default=mafThreshold, 
                         type=float, help="Threshold between 0 and 1 for the boundary between high and low minor allele frequency groups. Optional, defaults to "+str(mafThreshold)+".")
     parser.add_argument('--verbose', action="store_true", 
@@ -53,11 +53,11 @@ def main():
     if not os.access(outDir, os.W_OK):
          raise OSError("Cannot write to output directory "+outDir)
     # run MAF and heterozygosity computation
-    stem = args['in']
-    samples = len(open(stem+".fam").readlines())
+    stem = os.path.abspath(args['in'])
     snpTotal = len(open(stem+".bim").readlines())
-    MafHetFinder().writeMafSplitHet(args['out'], stem+".bed", samples, snpTotal,
-                                    mafThreshold, args['verbose'])
+    mhf = MafHetFinder()
+    mhf.runJson(args['out'], stem+".bed", stem+".fam", snpTotal,
+                mafThreshold, args['verbose'])
 
 if __name__ == "__main__":
     main()
