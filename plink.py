@@ -704,16 +704,19 @@ class MafHetFinder(PlinkHandler):
             totalCalls += 2 # count both alleles towards total
             if call==2: minorCalls+=1 # minor het
             elif call==3: minorCalls+=2 # minor hom
-        maf = minorCalls/float(totalCalls)
+        try: maf = minorCalls/float(totalCalls)
+        except ZeroDivisionError: maf = 0
         if maf > 0.5: maf = 1 - maf # by definition, MAF is less frequent
         return maf
 
     def readSampleNames(self, famPath):
-        """Read sample names from Plink .fam file"""
+        """Read sample individual names from Plink .fam file
+
+        First field in .fam line is family name, second is individual name"""
         famLines = open(famPath).readlines()
         names = []
         for line in famLines:
-            names.append(re.split('\s+', line.strip()).pop(0))
+            names.append(re.split('\s+', line.strip()).pop(1))
         return names
 
     def runJson(self, outPath, bedPath, famPath, 
@@ -749,7 +752,8 @@ class MafHetFinder(PlinkHandler):
             except ZeroDivisionError: lmh = 0
             try: hmh = counts[i][1]/highTotal # high MAF het
             except ZeroDivisionError: hmh = 0
-            result = { 'low_maf_het':[1, lmh], 'high_maf_het':[1, hmh]}
+            result = { 'low_maf_het':[1, round(lmh, digits)], 
+                       'high_maf_het':[1, round(hmh, digits)]}
             output[sampleNames[i]] = result
         out = open(outPath, 'w')
         json.dump(output, out)

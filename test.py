@@ -53,7 +53,7 @@ class TestPlink(unittest.TestCase):
         sampleNames = mhf.readSampleNames(stem+".fam")
         mhf.writeJson(outJson, countInfo, sampleNames, snps)
         md5 = self.checksum.getMD5hex(outJson)
-        self.assertEqual(md5, '3bac3f56b41b49c182605bf92de3a5bf')
+        self.assertEqual(md5, '121d5568bfeac001ee04aa1860c333fe')
         mhf.writeText(outText, countInfo, samples, snps)
         md5 = self.checksum.getMD5hex(outText)
         self.assertEqual(md5, '594ab40eadf9e61f9599c477556d3ea4')
