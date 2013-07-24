@@ -704,7 +704,8 @@ class MafHetFinder(PlinkHandler):
             totalCalls += 2 # count both alleles towards total
             if call==2: minorCalls+=1 # minor het
             elif call==3: minorCalls+=2 # minor hom
-        maf = minorCalls/float(totalCalls)
+        try: maf = minorCalls/float(totalCalls)
+        except ZeroDivisionError: maf = 0
         if maf > 0.5: maf = 1 - maf # by definition, MAF is less frequent
         return maf
 
