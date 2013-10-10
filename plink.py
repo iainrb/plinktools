@@ -36,7 +36,7 @@ class PlinkHandler:
     """General purpose class to read/write plink data for zcall"""
 
     def __init__(self):
-        pass
+        self.validator = PlinkValidator()
 
     def blockToCalls(self, block, remainder):
         """Convert a binary 'block' of data to call codes
@@ -76,7 +76,8 @@ class PlinkHandler:
         See http://pngu.mgh.harvard.edu/~purcell/plink/binary.shtml
         """
         if len(calls) != 4:
-            raise ValueError("Must have exactly 4 calls for byte conversion!")
+            msg = "Must have exactly 4 calls for byte conversion!"
+            raise PlinkToolsError(msg)
         byte = []
         for call in calls:
             if call==1: bcall = '00' # major homozygote, 'AA'
@@ -121,7 +122,7 @@ class PlinkHandler:
         parsed = bin(ord(bed))[2:]
         gap = 8 - len(parsed)
         if gap > 0: parsed = ''.join(['0']*gap)+parsed
-        elif gap < 0: raise ValueError
+        elif gap < 0: raise PlinkToolsError
         # parsed is now a string of the form '01101100'
         return parsed
 
@@ -139,7 +140,7 @@ class PlinkHandler:
             elif pair=='01': gtype = 2
             elif pair=='11': gtype = 3
             elif pair=='10': gtype = 0
-            else: raise ValueError("Invalid genotype string")
+            else: raise PlinkToolsError("Invalid genotype string")
             gtypes.append(gtype)
             i += 2
         return gtypes
@@ -149,12 +150,14 @@ class PlinkHandler:
         head = inFile.read(3)
         if ord(head[0])!=108 or ord(head[1])!=27:
             msg = "Header does not start with Plink 'magic number'!"
-            raise ValueError(msg)
+            raise PlinkToolsError(msg)
         if snpMajor:
             if ord(head[2])!=1:
-                raise ValueError("Plink .bed file not in SNP-major order.")
+                msg = "Plink .bed file not in SNP-major order."
+                raise PlinkToolsError(msg)
         elif ord(head[2])!=0:
-            raise ValueError("Plink .bed file not in individual-major order.")
+            msg = "Plink .bed file not in individual-major order."
+            raise PlinkToolsError(msg)
         return head
 
 class PlinkEquivalenceTester(PlinkHandler):
@@ -287,10 +290,11 @@ class PlinkEquivalenceTester(PlinkHandler):
             calls1 = self.parsePedLine(in1.readline())
             calls2 = self.parsePedLine(in2.readline())
             if calls1==None:
-                if calls2!=None: raise ValueError("Inputs of unequal length!")
+                if calls2!=None: 
+                    raise PlinkToolsError("Inputs of unequal length!")
                 else: break
             elif len(calls1)!=len(calls2):
-                raise ValueError("SNP sets of unequal length!")
+                raise PlinkToolsError("SNP sets of unequal length!")
             for j in range(len(calls1)):
                 c1 = calls1[j]
                 c2 = calls2[j]
@@ -440,10 +444,10 @@ class PlinkMerger(PlinkHandler):
             for suffix in (".bim", ".fam"):
                 myFile = stem+suffix
                 if not os.path.exists(myFile):
-                    raise ValueError("Missing Plink data file "+myFile)
+                    raise PlinkToolsError("Missing Plink data file "+myFile)
         return plinkList
 
-    def merge(self, stems, outPrefix, bim=None, verbose=False):
+    def merge(self, stems, outPrefix, bim=None, validate=True, verbose=False):
         snpTotal = len(open(stems[0]+".bim").readlines())
         if verbose:
             sys.stderr.write(time.asctime()+": Started.\n")
@@ -473,7 +477,14 @@ class PlinkMerger(PlinkHandler):
         else:
             msg = "Merge conditions not satisfied; must have congruent SNPs"+\
                 " and disjoint samples, or disjoint SNPs and congruent samples."
-            raise ValueError(msg)
+            raise PlinkToolsError(msg)
+        if validate:
+            ok = self.validator.run(outPrefix)
+            if not ok:
+                raise PlinkToolsError("Invalid output from Plink merge")
+            elif verbose:
+                msg = time.asctime()+": Plink output validated successfully.\n"
+                sys.stderr.write(msg)
         if verbose: 
             sys.stderr.write(time.asctime()+": Finished.\n")
 
@@ -509,7 +520,7 @@ class PlinkMerger(PlinkHandler):
         inputTotal = len(inPaths)
         if inputTotal!=len(samples):
             msg = "Mismatched lengths of input path and samples lists"
-            raise ValueError(msg)
+            raise PlinkToolsError(msg)
         inFiles = []
         for inPath in inPaths: inFiles.append((open(inPath, 'r')))
         outFile = open(outPath, 'w')
@@ -546,7 +557,7 @@ class PlinkMerger(PlinkHandler):
         for i in range(inputTotal):
             if inFiles[i].read() != '':
                 msg = "Bytes found after final expected sample in "+inPaths[i]
-                raise ValueError(msg)
+                raise PlinkToolsError(msg)
             else:
                 inFiles[i].close()
         outFile.close()
@@ -781,9 +792,43 @@ class MafHetFinder(PlinkHandler):
                                         round(allHet, digits)))
         out.close()
 
-class ChromosomeNameError(Exception):
-    """Exception class to identify parse errors for chromosome names"""
+
+class PlinkToolsError(Exception):
+    """Exception class for generic Plinktools errors"""
 
     def __init__(self, message, Errors):
         # Call the base class constructor with the parameters it needs
         Exception.__init__(self, message)
+
+
+class ChromosomeNameError(PlinkToolsError):
+    """Exception class to identify parse errors for chromosome names"""
+
+    def __init__(self, message, Errors):
+        # Call the base class constructor with the parameters it needs
+        PlinkToolsError.__init__(self, message)
+
+class PlinkValidator:
+    """Simple class to run Plink executable and validate data"""
+    def __init__(self):
+        if not self.plinkAvailable():
+            raise PlinkToolsError("Plink executable not found")
+
+    def plinkAvailable(self):
+        """Check that Plink executable is available on PATH"""
+        status = os.system('which plink')
+        if (status!=0): return False
+        else: return True
+
+    def run(self, stem, binary=True, cleanup=True):
+        """Check if Plink runs with non-zero exit status"""
+        if binary: cmd = 'plink --bfile '+stem+' > /dev/null'
+        else: cmd = 'plink '+stem+' > /dev/null'
+        status = os.system(cmd)
+        if cleanup:
+            plinkFiles = ['.pversion', 'plink.hh', 'plink.log', 'plink.nof', 
+                          'plink.nosex', 'plink.nof']
+            for pFile in plinkFiles: 
+                if os.path.exists(pFile): os.remove(pFile)
+        if (status!=0): return False
+        else: return True

@@ -20,7 +20,8 @@
 import json, os, sys, unittest
 
 from tempfile import mkdtemp
-from plink import MafHetFinder, PlinkEquivalenceTester, PlinkMerger
+from plink import MafHetFinder, PlinkEquivalenceTester, PlinkMerger, \
+    PlinkValidator
 from checksum import ChecksumFinder
 
 class TestPlink(unittest.TestCase):
@@ -29,6 +30,7 @@ class TestPlink(unittest.TestCase):
         self.dataDir = '/nfs/gapi/data/genotype/plinktools_test'
         self.outDir = os.path.abspath(mkdtemp(dir='.'))
         self.checksum = ChecksumFinder()
+        self.validator = PlinkValidator()
 
     def test_equivalence(self):
         """Test equivalence check on pairs of datasets"""
@@ -70,7 +72,7 @@ class TestPlink(unittest.TestCase):
         pm.merge(stemList, out, verbose=False)
         md5 = self.checksum.getMD5hex(out+".bed")
         self.assertEqual(md5, '9931ab854c92e2efcffb48ec2480f2bb')
-        self.validatePlink(out)
+        self.assertTrue(self.validator.run(out))
         # same thing, but using glob instead of list to find inputs
         inputPrefix = os.path.join(self.dataDir, 'omnix_prcmd_20130624*')
         stemList = pm.findBedStems(inputPrefix)
@@ -78,7 +80,7 @@ class TestPlink(unittest.TestCase):
         pm.merge(stemList, out, verbose=False)
         md5 = self.checksum.getMD5hex(out+".bed")
         self.assertEqual(md5, '9931ab854c92e2efcffb48ec2480f2bb')
-        self.validatePlink(out)
+        self.assertTrue(self.validator.run(out))
 
     def test_merge_congruent_snps(self):
         """Merge two .bed datasets with 100 and 81 samples respectively
@@ -93,18 +95,7 @@ class TestPlink(unittest.TestCase):
         self.assertTrue(os.path.exists(out+".bed"))
         md5 = self.checksum.getMD5hex(out+".bed")
         self.assertEqual(md5, 'db7dc2a92d339817d6d18974b0add3c7')
-        self.validatePlink(out)
-
-    def validatePlink(self, stem, cleanup=True):
-        """Run Plink on given binary dataset
-
-        Just checks that Plink runs without crashing, not detailed validation"""
-        self.assertEqual(os.system('plink --bfile '+stem+' > /dev/null'), 0)
-        if cleanup:
-            plinkFiles = ['.pversion', 'plink.hh', 'plink.log', 'plink.nof', 
-                          'plink.nosex', 'plink.nof']
-            for pFile in plinkFiles: 
-                if os.path.exists(pFile): os.remove(pFile)
+        self.assertTrue(self.validator.run(out))
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
