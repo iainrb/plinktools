@@ -29,6 +29,7 @@ class TestPlink(unittest.TestCase):
     def setUp(self):
         self.dataDir = '/nfs/gapi/data/genotype/plinktools_test'
         self.outDir = os.path.abspath(mkdtemp(dir='.'))
+        print "Output: "+self.outDir
         self.checksum = ChecksumFinder()
         self.validator = PlinkValidator()
 
@@ -42,6 +43,13 @@ class TestPlink(unittest.TestCase):
         stem3 = os.path.join(self.dataDir, 'samples_part_101_small')
         match = pet.compareBinary(stem1, stem3)
         self.assertFalse(match)
+
+    def test_executables(self):
+        """Check that executable scripts compile without crashing"""
+        scripts = ['compare.py', 'het_by_maf.py', 'merge_bed.py']
+        for script in scripts:
+            status = os.system(script+' --help > /dev/null')
+            self.assertEqual(status, 0)
 
     def test_maf_het(self):
         """Test het calculation on high/low maf"""
