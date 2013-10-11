@@ -655,23 +655,24 @@ class PlinkMerger(PlinkHandler):
 
     def writeBimFamCongruentSNPs(self, stems, outPrefix):
         """Write .bim, .fam files for congruent SNPs, disjoint samples"""
-        cmd = "cp %s %s" %  (stems[0]+".bim", outPrefix+".bim")
-        os.system(cmd)
+        status = os.system("cp %s %s" %  (stems[0]+".bim", outPrefix+".bim"))
+        if status!=0: raise PlinkToolsError("Failed to write .bim file!")
         famPaths = []
         for stem in stems: famPaths.append(stem+".fam")
-        cmd = "cat "+" ".join(famPaths)+" > "+outPrefix+".fam"
-        os.system(cmd)
+        status = os.system("cat "+" ".join(famPaths)+" > "+outPrefix+".fam")
+        if status!=0: raise PlinkToolsError("Failed to write .fam file!")
 
     def writeBimFamCongruentSamples(self, sortedStems, outPrefix):
         """Write .bim, .fam files for congruent samples, disjoint SNPs
 
         Need to ensure stems are in same sort order as merged .bed files"""
         cmd = "cp %s %s" %  (sortedStems[0]+".fam", outPrefix+".fam")
-        os.system(cmd)
+        status = os.system(cmd)
+        if status!=0: raise PlinkToolsError("Failed to write .fam file!")
         bimPaths = []
         for stem in sortedStems: bimPaths.append(stem+".bim")
-        cmd = "cat "+" ".join(bimPaths)+" > "+outPrefix+".bim"
-        os.system(cmd)
+        status = os.system("cat "+" ".join(bimPaths)+" > "+outPrefix+".bim")
+        if status!=0: raise PlinkToolsError("Failed to write .bim file!")
 
 class MafHetFinder(PlinkHandler):
     """Class to find autosome heterozygosity, split by MAF
