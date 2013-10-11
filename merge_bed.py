@@ -52,7 +52,7 @@ def main():
         if args['prefix']==None: inputPrefix = "."
         else: inputPrefix = args['prefix']
         stemList = pm.findBedStems(inputPrefix)
-    if args['no-validate']==True: validate = False
+    if args['no_validate']==True: validate = False # argparse changes - to _
     else: validate = True
     pm.merge(stemList, args['out'], args['bim'], validate, args['verbose'])
 

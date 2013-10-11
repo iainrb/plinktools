@@ -817,7 +817,7 @@ class PlinkValidator:
 
     def plinkAvailable(self):
         """Check that Plink executable is available on PATH"""
-        status = os.system('which plink')
+        status = os.system('which plink > /dev/null')
         if (status!=0): return False
         else: return True
 
