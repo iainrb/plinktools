@@ -794,20 +794,36 @@ class MafHetFinder(PlinkHandler):
         out.close()
 
 
+
+class PlinkDiff(PlinkHandler):
+
+    """Wrapper class for Plink's diff capability"""
+
+    # inherits __init__ from PlinkHandler, checks Plink executable is available
+
+    def runPlinkBinary(self, stem1, stem2, outStem, verbose=False):
+        """Run Plink executable with appropriate options to find diff 
+
+        Inputs: Stems for two Plink binary input datasets, and for output
+        Stem is Plink file path without .bed, .bim, .fam extension"""
+        bmerge = "%s.bed %s.bim %s.fam" % (stem2, stem2, stem2)
+        cmd = "plink --noweb --bfile "+stem1+" --bmerge "+bmerge+\
+            " --make-bed --merge-mode 6 --out "+outStem
+        if not verbose: cmd = cmd+" > /dev/null"
+        status = os.system(cmd)
+        if status!=0:
+            raise PlinkToolsError("Non-zero exit status from Plink executable")
+
+
+
+
 class PlinkToolsError(Exception):
     """Exception class for generic Plinktools errors"""
-
-    def __init__(self, message, Errors):
-        # Call the base class constructor with the parameters it needs
-        Exception.__init__(self, message)
-
+    pass
 
 class ChromosomeNameError(PlinkToolsError):
     """Exception class to identify parse errors for chromosome names"""
-
-    def __init__(self, message, Errors):
-        # Call the base class constructor with the parameters it needs
-        PlinkToolsError.__init__(self, message)
+    pass
 
 class PlinkValidator:
     """Simple class to run Plink executable and validate data"""
