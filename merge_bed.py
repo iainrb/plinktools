@@ -37,6 +37,8 @@ def main():
                         help="Plink stem (path without .bed, .bim, .fam extension) for merged output. Required.")
     parser.add_argument('--bim', metavar="PATH", 
                         help="Path to .bim file for SNP sort order, used in case with congruent SNPs and disjoint samples. Optional, uses default sort if absent.")
+    parser.add_argument('--no-validate',  action="store_true", 
+                        help="Do not attempt to run PLINK to validate final output. Allows merging without use of the Plink executable.")
     parser.add_argument('--verbose', action="store_true", 
                         help="Print additional information to standard output/error.")
     args = vars(parser.parse_args())
@@ -50,7 +52,9 @@ def main():
         if args['prefix']==None: inputPrefix = "."
         else: inputPrefix = args['prefix']
         stemList = pm.findBedStems(inputPrefix)
-    pm.merge(stemList, args['out'], args['bim'], args['verbose'])
+    if args['no_validate']==True: validate = False # argparse changes - to _
+    else: validate = True
+    pm.merge(stemList, args['out'], args['bim'], validate, args['verbose'])
 
 if __name__ == "__main__":
     main()

@@ -9,5 +9,5 @@ usage:
 install: $(PREFIX)
 	install -d $(DEST)
 	@rm -f $(DEST)/*.pyc    # force recompiling of any .pyc files
-	install checksum.py compare.py __init__.py merge_bed.py plink.py $(DEST)
+	install checksum.py compare.py het_by_maf.py __init__.py merge_bed.py plink.py $(DEST)
 	@echo -e "Plinktools successfully installed."

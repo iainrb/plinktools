@@ -27,17 +27,16 @@ See https://github.com/wtsi-npg/zCall
 """
 
 
-import os, re, struct, sys, time
+import json, os, re, struct, sys, time
 from glob import glob
 from checksum import ChecksumFinder
-import json # used for temporary troubleshooting in equivalence test
 
 class PlinkHandler:
 
     """General purpose class to read/write plink data for zcall"""
 
     def __init__(self):
-        pass
+        self.validator = PlinkValidator()
 
     def blockToCalls(self, block, remainder):
         """Convert a binary 'block' of data to call codes
@@ -77,7 +76,8 @@ class PlinkHandler:
         See http://pngu.mgh.harvard.edu/~purcell/plink/binary.shtml
         """
         if len(calls) != 4:
-            raise ValueError("Must have exactly 4 calls for byte conversion!")
+            msg = "Must have exactly 4 calls for byte conversion!"
+            raise PlinkToolsError(msg)
         byte = []
         for call in calls:
             if call==1: bcall = '00' # major homozygote, 'AA'
@@ -122,7 +122,7 @@ class PlinkHandler:
         parsed = bin(ord(bed))[2:]
         gap = 8 - len(parsed)
         if gap > 0: parsed = ''.join(['0']*gap)+parsed
-        elif gap < 0: raise ValueError
+        elif gap < 0: raise PlinkToolsError
         # parsed is now a string of the form '01101100'
         return parsed
 
@@ -140,7 +140,7 @@ class PlinkHandler:
             elif pair=='01': gtype = 2
             elif pair=='11': gtype = 3
             elif pair=='10': gtype = 0
-            else: raise ValueError("Invalid genotype string")
+            else: raise PlinkToolsError("Invalid genotype string")
             gtypes.append(gtype)
             i += 2
         return gtypes
@@ -150,12 +150,14 @@ class PlinkHandler:
         head = inFile.read(3)
         if ord(head[0])!=108 or ord(head[1])!=27:
             msg = "Header does not start with Plink 'magic number'!"
-            raise ValueError(msg)
+            raise PlinkToolsError(msg)
         if snpMajor:
             if ord(head[2])!=1:
-                raise ValueError("Plink .bed file not in SNP-major order.")
+                msg = "Plink .bed file not in SNP-major order."
+                raise PlinkToolsError(msg)
         elif ord(head[2])!=0:
-            raise ValueError("Plink .bed file not in individual-major order.")
+            msg = "Plink .bed file not in individual-major order."
+            raise PlinkToolsError(msg)
         return head
 
 class PlinkEquivalenceTester(PlinkHandler):
@@ -175,7 +177,7 @@ class PlinkEquivalenceTester(PlinkHandler):
         - SNP sets are identical to within allele flips
         - Sample sets are identical
         flip argument is array of 0 for no flip, 1 for flip on each SNP value
-        snpTotal, samples arguments are total number of snps, samples"""
+        samples argument = total number of samples"""
         blockSize = self.findBlockSize(samples)
         bed1 = open(bedPath1)
         bed2 = open(bedPath2)
@@ -288,10 +290,11 @@ class PlinkEquivalenceTester(PlinkHandler):
             calls1 = self.parsePedLine(in1.readline())
             calls2 = self.parsePedLine(in2.readline())
             if calls1==None:
-                if calls2!=None: raise ValueError("Inputs of unequal length!")
+                if calls2!=None: 
+                    raise PlinkToolsError("Inputs of unequal length!")
                 else: break
             elif len(calls1)!=len(calls2):
-                raise ValueError("SNP sets of unequal length!")
+                raise PlinkToolsError("SNP sets of unequal length!")
             for j in range(len(calls1)):
                 c1 = calls1[j]
                 c2 = calls2[j]
@@ -441,10 +444,10 @@ class PlinkMerger(PlinkHandler):
             for suffix in (".bim", ".fam"):
                 myFile = stem+suffix
                 if not os.path.exists(myFile):
-                    raise ValueError("Missing Plink data file "+myFile)
+                    raise PlinkToolsError("Missing Plink data file "+myFile)
         return plinkList
 
-    def merge(self, stems, outPrefix, bim=None, verbose=False):
+    def merge(self, stems, outPrefix, bim=None, validate=True, verbose=False):
         snpTotal = len(open(stems[0]+".bim").readlines())
         if verbose:
             sys.stderr.write(time.asctime()+": Started.\n")
@@ -474,7 +477,14 @@ class PlinkMerger(PlinkHandler):
         else:
             msg = "Merge conditions not satisfied; must have congruent SNPs"+\
                 " and disjoint samples, or disjoint SNPs and congruent samples."
-            raise ValueError(msg)
+            raise PlinkToolsError(msg)
+        if validate:
+            ok = self.validator.run(outPrefix)
+            if not ok:
+                raise PlinkToolsError("Invalid output from Plink merge")
+            elif verbose:
+                msg = time.asctime()+": Plink output validated successfully.\n"
+                sys.stderr.write(msg)
         if verbose: 
             sys.stderr.write(time.asctime()+": Finished.\n")
 
@@ -510,7 +520,7 @@ class PlinkMerger(PlinkHandler):
         inputTotal = len(inPaths)
         if inputTotal!=len(samples):
             msg = "Mismatched lengths of input path and samples lists"
-            raise ValueError(msg)
+            raise PlinkToolsError(msg)
         inFiles = []
         for inPath in inPaths: inFiles.append((open(inPath, 'r')))
         outFile = open(outPath, 'w')
@@ -547,7 +557,7 @@ class PlinkMerger(PlinkHandler):
         for i in range(inputTotal):
             if inFiles[i].read() != '':
                 msg = "Bytes found after final expected sample in "+inPaths[i]
-                raise ValueError(msg)
+                raise PlinkToolsError(msg)
             else:
                 inFiles[i].close()
         outFile.close()
@@ -645,27 +655,181 @@ class PlinkMerger(PlinkHandler):
 
     def writeBimFamCongruentSNPs(self, stems, outPrefix):
         """Write .bim, .fam files for congruent SNPs, disjoint samples"""
-        cmd = "cp %s %s" %  (stems[0]+".bim", outPrefix+".bim")
-        os.system(cmd)
+        status = os.system("cp %s %s" %  (stems[0]+".bim", outPrefix+".bim"))
+        if status!=0: raise PlinkToolsError("Failed to write .bim file!")
         famPaths = []
         for stem in stems: famPaths.append(stem+".fam")
-        cmd = "cat "+" ".join(famPaths)+" > "+outPrefix+".fam"
-        os.system(cmd)
+        status = os.system("cat "+" ".join(famPaths)+" > "+outPrefix+".fam")
+        if status!=0: raise PlinkToolsError("Failed to write .fam file!")
 
     def writeBimFamCongruentSamples(self, sortedStems, outPrefix):
         """Write .bim, .fam files for congruent samples, disjoint SNPs
 
         Need to ensure stems are in same sort order as merged .bed files"""
         cmd = "cp %s %s" %  (sortedStems[0]+".fam", outPrefix+".fam")
-        os.system(cmd)
+        status = os.system(cmd)
+        if status!=0: raise PlinkToolsError("Failed to write .fam file!")
         bimPaths = []
         for stem in sortedStems: bimPaths.append(stem+".bim")
-        cmd = "cat "+" ".join(bimPaths)+" > "+outPrefix+".bim"
-        os.system(cmd)
+        status = os.system("cat "+" ".join(bimPaths)+" > "+outPrefix+".bim")
+        if status!=0: raise PlinkToolsError("Failed to write .bim file!")
 
-class ChromosomeNameError(Exception):
-    """Exception class to identify parse errors for chromosome names"""
+class MafHetFinder(PlinkHandler):
+    """Class to find autosome heterozygosity, split by MAF
+
+    Assumes SNP-major input
+    Use to apply het filter separately to high/low MAF, eg. for exome chips"""
+
+    def mafSplitHetCounts(self, bedPath, samples, snpTotal, mafThreshold=0.01,
+                          verbose=False):
+        """Find het rates on SNPs above/below MAF threshold for each sample
+
+        Populate an array: [low total, low het, high total, high het]"""
+        counts = [None]*samples
+        for i in range(samples): counts[i] = [0]*2
+        highTotal = 0
+        lowTotal = 0
+        blockSize = self.findBlockSize(samples)
+        remainder = samples % 4
+        bed = open(bedPath)
+        bed.seek(3) # skip headers
+        for i in range(snpTotal):
+            calls = self.blockToCalls(bed.read(blockSize), remainder)
+            maf = self.findMAF(calls) # MAF for this SNP
+            if maf <= mafThreshold: lowTotal += 1
+            else: highTotal += 1
+            for j in range(len(calls)):
+                if calls[j]==2: # heterozygote
+                    if maf <= mafThreshold: counts[j][0] += 1
+                    else: counts[j][1] += 1
+            if verbose and (i+1) % 10000 == 0:
+                print "Found MAF for SNP", i+1, "of", snpTotal
+        bed.close()
+        return (lowTotal, highTotal, counts)
+
+    def findMAF(self, calls):
+        """Find minor allele frequency from a given set of calls"""
+        totalCalls = 0 # total non-null calls for this SNP
+        minorCalls = 0 # total 'B' allele calls
+        for call in calls:
+            if call==0: continue
+            totalCalls += 2 # count both alleles towards total
+            if call==2: minorCalls+=1 # minor het
+            elif call==3: minorCalls+=2 # minor hom
+        try: maf = minorCalls/float(totalCalls)
+        except ZeroDivisionError: maf = 0
+        if maf > 0.5: maf = 1 - maf # by definition, MAF is less frequent
+        return maf
+
+    def readSampleNames(self, famPath):
+        """Read sample individual names from Plink .fam file
+
+        First field in .fam line is family name, second is individual name"""
+        famLines = open(famPath).readlines()
+        names = []
+        for line in famLines:
+            names.append(re.split('\s+', line.strip()).pop(1))
+        return names
+
+    def runJson(self, outPath, bedPath, famPath, 
+                snpTotal, mafThreshold=0.01, verbose=False, digits=6):
+        """Run MAF/het calculation and write JSON output """
+        sampleNames = self.readSampleNames(famPath)
+        countInfo = self.mafSplitHetCounts(bedPath, len(sampleNames), 
+                                           snpTotal, mafThreshold, verbose)
+        self.writeJson(outPath, countInfo, sampleNames, snpTotal, mafThreshold, 
+                       verbose)
+
+    def runText(self, outPath, bedPath, famPath, 
+                snpTotal, mafThreshold=0.01, verbose=False, digits=6):
+        """Run MAF/het calculation and write plain text output """
+        samples = len(self.readSampleNames(famPath))
+        countInfo = self.mafSplitHetCounts(bedPath, samples, 
+                                           snpTotal, mafThreshold, verbose)
+        self.writeText(outPath, countInfo, samples, snpTotal, mafThreshold, 
+                       verbose)
+
+    def writeJson(self, outPath, countInfo, sampleNames, 
+                  snpTotal, mafThreshold=0.01, verbose=False, digits=6):
+        """Find heterozygosity for high/low MAF and write to .json
+
+        .json format is similar to qc_results.json in genotyping PL"""
+        samples = len(sampleNames)
+        (lowTotal, highTotal, counts) = countInfo
+        lowTotal = float(lowTotal)
+        highTotal = float(highTotal)
+        output = {}
+        for i in range(samples):
+            try: lmh = counts[i][0]/lowTotal # low MAF het
+            except ZeroDivisionError: lmh = 0
+            try: hmh = counts[i][1]/highTotal # high MAF het
+            except ZeroDivisionError: hmh = 0
+            result = { 'low_maf_het':[1, round(lmh, digits)], 
+                       'high_maf_het':[1, round(hmh, digits)]}
+            output[sampleNames[i]] = result
+        out = open(outPath, 'w')
+        json.dump(output, out)
+        out.close()
+        
+    def writeText(self, outPath, countInfo, samples, snpTotal, 
+                  mafThreshold=0.01, verbose=False, digits=6):
+        """Find heterozygosity for high/low MAF and write to text"""
+        out = open(outPath, 'w')
+        out.write("#MAF_THRESHOLD:%s\n" % (mafThreshold,))
+        (lowTotal, highTotal, counts) = countInfo
+        out.write("#LOW_MAF_TOTAL:%s\n" % (lowTotal,))
+        out.write("#HIGH_MAF_TOTAL:%s\n" % (highTotal,))
+        out.write("#LOW_MAF_HET\tHIGH_MAF_HET\tALL_HET\n")
+        lowTotal = float(lowTotal)
+        highTotal = float(highTotal)
+        snpTotal = float(snpTotal)
+        for i in range(samples):
+            try: lmh = counts[i][0]/lowTotal # low MAF het
+            except ZeroDivisionError: lmh = 0
+            try: hmh = counts[i][1]/highTotal # high MAF het
+            except ZeroDivisionError: hmh = 0
+            allHet = (counts[i][0] + counts[i][1])/snpTotal
+            out.write("%s\t%s\t%s\n" % (round(lmh, digits), round(hmh, digits),
+                                        round(allHet, digits)))
+        out.close()
+
+
+class PlinkToolsError(Exception):
+    """Exception class for generic Plinktools errors"""
 
     def __init__(self, message, Errors):
         # Call the base class constructor with the parameters it needs
         Exception.__init__(self, message)
+
+
+class ChromosomeNameError(PlinkToolsError):
+    """Exception class to identify parse errors for chromosome names"""
+
+    def __init__(self, message, Errors):
+        # Call the base class constructor with the parameters it needs
+        PlinkToolsError.__init__(self, message)
+
+class PlinkValidator:
+    """Simple class to run Plink executable and validate data"""
+    def __init__(self):
+        if not self.plinkAvailable():
+            raise PlinkToolsError("Plink executable not found")
+
+    def plinkAvailable(self):
+        """Check that Plink executable is available on PATH"""
+        status = os.system('which plink > /dev/null')
+        if (status!=0): return False
+        else: return True
+
+    def run(self, stem, binary=True, cleanup=True):
+        """Check if Plink runs with non-zero exit status"""
+        if binary: cmd = 'plink --bfile '+stem+' > /dev/null'
+        else: cmd = 'plink '+stem+' > /dev/null'
+        status = os.system(cmd)
+        if cleanup:
+            plinkFiles = ['.pversion', 'plink.hh', 'plink.log', 'plink.nof', 
+                          'plink.nosex', 'plink.nof']
+            for pFile in plinkFiles: 
+                if os.path.exists(pFile): os.remove(pFile)
+        if (status!=0): return False
+        else: return True
