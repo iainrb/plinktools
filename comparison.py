@@ -64,38 +64,70 @@ Front-end: Data structure(s) of raw results, use to calculate summary stats
 
 """
 
-import gzip, os, re
-
-from plink import PlinkHandler, PlinkValidator, PlinkToolsError
-
+import json, gzip, os, re, sys
+from plink import PlinkValidator, PlinkToolsError
 
 class PlinkDiffShared:
-    """Define some shared constants"""
+    """Define some shared constants for use as dictionary keys"""
 
-    # Variables for entire dataset, and for sample/SNP breakdowns
+    # Variables for both entire diff, and sample/SNP breakdowns
     COUNT_KEYS = ['MISMATCH', 'MISMATCH_NON_NULL', 'ALLELE_FLIP']
     MISMATCH_KEY = COUNT_KEYS[0]
     MISMATCH_NON_NULL_KEY = COUNT_KEYS[1]
     ALLELE_FLIP_KEY = COUNT_KEYS[2]
 
-    # Variables for the dataset as a whole
+    # Variables for the diff as a whole
     TOTAL_KEYS = ['CALLS', 'CALLS_NON_NULL', 'SAMPLES', 'SNPS', 'CONCORDANT']
-    CALLS_KEY = TOTAL_KEYS[0]
-    CALLS_NON_NULL_KEY = TOTAL_KEYS[1]
-    SAMPLES_KEY = TOTAL_KEYS[2]
-    SNPS_KEY = TOTAL_KEYS[3]
-    CONCORDANT_KEY = TOTAL_KEYS[4]
+    CALLS_KEY = TOTAL_KEYS[0] # total shared (sample, snp) pairs
+    CALLS_NON_NULL_KEY = TOTAL_KEYS[1] # as above, but both non-null
+    SAMPLES_KEY = TOTAL_KEYS[2] # total shared samples
+    SNPS_KEY = TOTAL_KEYS[3] # total shared snps
+    CONCORDANT_KEY = TOTAL_KEYS[4] # concordance (as reported by Plink)
 
+    # Variables for input datasets
+    INPUT_KEYS = ['SNPS_1', 'SNPS_2', 'SAMPLES_1', 'SAMPLES_2', 
+                  'NEW_SNPS', 'NEW_SAMPLES']
+    SNPS_1_KEY = INPUT_KEYS[0] # size of SNP sets 1 & 2
+    SNPS_2_KEY = INPUT_KEYS[1]
+    SAMPLES_1_KEY = INPUT_KEYS[2] # size of sample sets 1 & 2
+    SAMPLES_2_KEY = INPUT_KEYS[3]
+    NEW_SNPS_KEY = INPUT_KEYS[4] # SNPs in 2 but not in 1
+    NEW_SAMPLES_KEY = INPUT_KEYS[5] # Samples in 2 but not in 1
 
 class PlinkDiffParser(PlinkDiffShared):
+    """Run Plink's diff function and parse the output
+
+    Requires horrible text munging
+    Tested on Plink 1.0.7, may be broken by future Plink updates
+    (Could replace by a class to parse .bed files and find diff results)
+
+    Stores results in a PlinkDiffData object
+    """
 
     def __init__(self):
+        self.validator = PlinkValidator() # checks if Plink is available
         self.data = PlinkDiffData()
+        self.verbose = False
+        # compile regular expressions to parse Plink .log file
+        logPatterns = [
+            '\d+ markers to be included from', # first input dataset
+            '\d+ individuals read from ',
+            '\d+ markers to be merged from', # second input dataset
+            '\d+ individuals merged from',
+            'Of \d+ overlapping SNPs, \d+ were both genotyped',
+            'and \d+ were concordant',
+            # shared SNPs
+            'Of these, \d+ are new, \d+ already exist in current data', 
+            # shared samples
+            'Of these, \d+ were new, \d+ were already in current data'
+            ] 
+        self.logExprs = []
+        for p in logPatterns: self.logExprs.append(re.compile(p))
 
     def getData(self):
         return self.data
 
-    def parseDiffFile(self, stem, removeInput=False, verbose=True):
+    def parseDiffFile(self, stem, removeInput=False):
         """Parse .diff output file from Plink, compress and find diff stats
         
         The .diff file has one line for each (snp, sample) pair that differs
@@ -107,7 +139,7 @@ class PlinkDiffParser(PlinkDiffShared):
         csvHeader = 'SNP,FID,IID,NEW,OLD\n'
         if not (os.path.exists(diffPath)):
             raise PlinkToolsError("Plink .diff output file not found!")
-        elif verbose:
+        elif self.verbose:
             print "Plink .diff output file found."
         inFile = open(diffPath, 'r')
         outFile = gzip.open(outPath, 'w')
@@ -123,10 +155,10 @@ class PlinkDiffParser(PlinkDiffShared):
             self.parseDiffLine(line, outFile)
         inFile.close()
         outFile.close()
-        if verbose: print "Results read from Plink .diff output."
+        if self.verbose: print "Results read from Plink .diff output."
         if removeInput:
             os.remove(diffPath)
-            if verbose: print "Removed original .diff file."
+            if self.verbose: print "Removed original .diff file."
 
     def parseDiffLine(self, line, outFile):
         """Line of .diff file represents a mismatched (snp, sample) pair"""
@@ -148,51 +180,65 @@ class PlinkDiffParser(PlinkDiffShared):
             self.data.incrementSample(sample, self.ALLELE_FLIP_KEY)
             self.data.incrementSnp(snp, self.ALLELE_FLIP_KEY)
 
-    def parseLogFile(self, stem, verbose=False):
-        """Munge the .log text from Plink to find total number of shared 
-        SNPs, and number which were both genotyped. Unfortunately this is 
-        the only way to find the latter statistic from Plink diff output."""
+    def parseLogFile(self, stem):
+        """Munge the .log text from Plink to find totals for the dataset. 
+        Unfortunately this is the only way to find these values from Plink 
+        diff output."""
         logPath = stem+'.log'
         if not (os.path.exists(logPath)):
             raise PlinkToolsError("Plink .log output file not found!")
-        elif verbose:
+        elif self.verbose:
             print "Plink .log output file found."
         lines = open(logPath).readlines()
-        patterns = [
-            'Of \d+ overlapping SNPs, \d+ were both genotyped',
-            'and \d+ were concordant',
-            # shared SNPs
-            'Of these, \d+ are new, \d+ already exist in current data', 
-            # shared samples
-            'Of these, \d+ were new, \d+ were already in current data'
-            ] 
-        exprs = []
-        for p in patterns: exprs.append(re.compile(p))
         # find: intersection, bothGenotyped, concordant, snps, samples
+        logKeys = self.TOTAL_KEYS + self.INPUT_KEYS
+        for key in logKeys:
+            # set to None instead of 0 to detect parsing failure
+            self.data.setGlobal(key, None)
         for i in range(len(lines)):
             line = lines[i]
             words = re.split('\s+', line.strip())
-            if exprs[0].match(line):
+            if self.logExprs[0].match(line):
+                self.data.setGlobal(self.SNPS_1_KEY, int(words[0]))
+            elif self.logExprs[1].match(line):
+                self.data.setGlobal(self.SAMPLES_1_KEY, int(words[0]))
+            elif self.logExprs[2].match(line):
+                self.data.setGlobal(self.SNPS_2_KEY, int(words[0]))
+            elif self.logExprs[3].match(line):
+                self.data.setGlobal(self.SAMPLES_2_KEY, int(words[0]))
+            elif self.logExprs[4].match(line):
                 self.data.setGlobal(self.CALLS_KEY, int(words[1]))
                 self.data.setGlobal(self.CALLS_NON_NULL_KEY, int(words[4]))
-            elif exprs[1].match(line):
+            elif self.logExprs[5].match(line):
                 self.data.setGlobal(self.CONCORDANT_KEY, int(words[1]))
-            elif exprs[2].match(line) and re.search('markers', lines[i-1]):
+            elif self.logExprs[6].match(line) and \
+                    re.search('markers', lines[i-1]):
+                self.data.setGlobal(self.NEW_SNPS_KEY, int(words[2]))
                 self.data.setGlobal(self.SNPS_KEY, int(words[5]))
-            elif exprs[3].match(line) and re.search('individuals',lines[i-1]):
+            elif self.logExprs[7].match(line) and \
+                    re.search('individuals',lines[i-1]):
+                self.data.setGlobal(self.NEW_SAMPLES_KEY, int(words[2]))
                 self.data.setGlobal(self.SAMPLES_KEY, int(words[5]))
+        parsedOK = True
+        for key in logKeys:
+            if self.data.getGlobal(key)==None:
+                msg = "ERROR: Failed to parse "+key+" from Plink output\n";
+                sys.stderr.write(msg)
+                parsedOK = False
+        if not parsedOK:
+            raise PlinkToolsError("Failed to parse Plink diff .log file!")
 
     def run(self, stem1, stem2, outStem, verbose=False):
         """Main method to run Plink diff and parse the output """
+        self.verbose = verbose
         if not (os.path.exists(outStem+".log") 
                 and os.path.exists(outStem+".diff")):
-            self.runBinaryDiff(stem1, stem2, outStem, verbose)
-        self.parseDiffFile(outStem, verbose=verbose)
-        self.parseLogFile(outStem, verbose)
-        print self.data.globalTotals
+            self.runBinaryDiff(stem1, stem2, outStem)
+        self.parseDiffFile(outStem)
+        self.parseLogFile(outStem)
         return self.data
 
-    def runBinaryDiff(self, stem1, stem2, outStem, verbose=False):
+    def runBinaryDiff(self, stem1, stem2, outStem):
         """Run Plink executable with appropriate options to find diff 
 
         Inputs: Stems for two Plink binary input datasets, and for output
@@ -200,7 +246,7 @@ class PlinkDiffParser(PlinkDiffShared):
         bmerge = "%s.bed %s.bim %s.fam" % (stem2, stem2, stem2)
         cmd = "plink --noweb --bfile "+stem1+" --bmerge "+bmerge+\
             " --make-bed --merge-mode 6 --out "+outStem
-        if not verbose: cmd = cmd+" > /dev/null"
+        if not self.verbose: cmd = cmd+" > /dev/null"
         status = os.system(cmd)
         if status!=0:
             msg = "Non-zero exit status from Plink executable!"
@@ -208,12 +254,12 @@ class PlinkDiffParser(PlinkDiffShared):
 
 class PlinkDiffData(PlinkDiffShared):
 
-    """Container for simple result counts:
+    """Container for diff results:
     - Shared (snp, sample) pairs
     - Non-null shared pairs
-    - Concordant pairs
-    - Concordant non-null pairs
-    - Concordant pairs within flip
+    - Mismatched pairs
+    - Mismatched non-null pairs
+    - Mismatched pairs differing only by a major/minor allele flip
 
     Grand totals, and breakdowns by sample/SNP
     """
@@ -222,15 +268,24 @@ class PlinkDiffData(PlinkDiffShared):
         self.globalTotals = {}
         self.snpTotals = {}
         self.sampleTotals = {}
-        self.totalShared = 0
-        self.totalSharedNonNull = 0       
+        self.inputs = {}
+
+        self.congruentSNPs = True
+        self.congruentSamples = True
         for key in self.COUNT_KEYS: self.globalTotals[key] = 0
         for key in self.TOTAL_KEYS: self.globalTotals[key] = 0
+        for key in self.INPUT_KEYS: self.globalTotals[key] = 0
+        self.globalKeys = self.COUNT_KEYS + self.TOTAL_KEYS + self.INPUT_KEYS
+
+    def getGlobalDictionary(self):
+        return self.globalTotals
 
     def getGlobal(self, key):
         return self.globalTotals[key]
 
     def setGlobal(self, key, value):
+        if key not in self.globalKeys: 
+            raise ValueError("Invalid key for global diff result: "+str(key))
         self.globalTotals[key] = value
 
     def incrementGlobal(self, key):
@@ -245,6 +300,8 @@ class PlinkDiffData(PlinkDiffShared):
         return self.sampleTotals[sample][key]
 
     def setSample(self, sample, key, value):
+        if key not in self.COUNT_KEYS:
+            raise ValueError("Invalid key for sample diff: "+str(key))
         try:
             self.sampleTotals[sample][key] = value
         except KeyError:
@@ -264,9 +321,11 @@ class PlinkDiffData(PlinkDiffShared):
             self.snpTotals[snp][key] = 0
 
     def getSnp(self, snp, key):
-        return self.snpTotals[key][snp]
+        return self.snpTotals[snp][key]
 
     def setSnp(self, snp, key, value):
+        if key not in self.COUNT_KEYS:
+            raise ValueError("Invalid key for SNP diff: "+str(key))
         try:
             self.snpTotals[snp][key] = value
         except KeyError:
@@ -280,30 +339,162 @@ class PlinkDiffData(PlinkDiffShared):
             self.addSnp(snp)
             self.snpTotals[snp][key] += 1
 
+    def getSnpList(self):
+        return self.snpTotals.keys()
+
+    def getSampleList(self):
+        return self.sampleTotals.keys()
+
 class PlinkDiffWriter(PlinkDiffShared):
     """Take diff data, calculate additional stats and write output"""
 
-    def __init__(self, data):
+    def __init__(self, data, verbose=True):
         self.data = data
+        self.verbose = verbose
+        self.mismatchRate = 0.0
+        self.mismatchNNRate = 0.0
+        self.flipRate = 0.0
+        self.flipMismatchRate = 0.0
+        self.congruentSNPs = False
+        self.congruentSamples = False
         self.findConcordance()
+        self.findCongruence()
+        self.equivalent = self.findEquivalence(allowFlip=False)
+        self.equivalentWithinFlip = self.findEquivalence(allowFlip=True)
 
     def findConcordance(self):
-        self.mismatch = self.data.getGlobal(self.MISMATCH_KEY) / float(self.data.getGlobal(self.CALLS_KEY))
-        self.mismatchNonNull = self.data.getGlobal(self.MISMATCH_NON_NULL_KEY) / float(self.data.getGlobal(self.CALLS_NON_NULL_KEY))
-        self.flipRate = self.data.getGlobal(self.ALLELE_FLIP_KEY) / float(self.data.getGlobal(self.CALLS_NON_NULL_KEY))
-        print "Concordance:", 1 - self.mismatch
-        print "Concordance on non-null calls:", 1 - self.mismatchNonNull
-        print "Allele flip rate:", self.flipRate
+        """ Find concordance on shared (sample, snp) pairs """
+        calls = self.data.getGlobal(self.CALLS_KEY)
+        callsNN = self.data.getGlobal(self.CALLS_NON_NULL_KEY)
+        mismatch = self.data.getGlobal(self.MISMATCH_KEY)
+        mismatchNN = self.data.getGlobal(self.MISMATCH_NON_NULL_KEY)
+        flip = self.data.getGlobal(self.ALLELE_FLIP_KEY)
+        # make sure we do not divide by zero
+        if calls==0:
+            sys.stderr.write("No shared calls in Plink data\n")
+            self.mismatchRate = None
+        else:
+            self.mismatchRate = mismatch / float(calls)
+        if callsNN==0:
+            sys.stderr.write("No non-null shared calls in Plink data\n")
+            self.mismatchNNRate = None
+            self.flipRate = None
+        else:
+            self.mismatchNNRate = mismatchNN / float(callsNN)
+            self.flipRate = flip / float(callsNN)
+        if mismatch==0:
+            sys.stderr.write("No mismatched calls in Plink data\n")
+            self.flipMismatchRate = None
+        else:
+            self.flipMismatchRate = flip / float(mismatch)
+        if self.verbose:
+            print "Concordance: %.4f" % (1 - self.mismatchRate)
+            print "Concordance on non-null calls: %.4f" % \
+                (1-self.mismatchNNRate)
+            print "Allele flip rate: %.4f" % self.flipRate
+            print "Flips as proportion of mismatches: %.4f" % \
+                self.flipMismatchRate
 
+    def findCongruence(self):
+        """Find congruence (or otherwise) of input SNP and samples sets"""
+        if self.data.getGlobal(self.SNPS_1_KEY) == self.data.getGlobal(self.SNPS_2_KEY) and self.data.getGlobal(self.NEW_SNPS_KEY) == 0:
+            self.congruentSNPs = True
+        else:
+            self.congruentSNPs = False
+        if self.data.getGlobal(self.SAMPLES_1_KEY) == self.data.getGlobal(self.SAMPLES_2_KEY) and self.data.getGlobal(self.NEW_SAMPLES_KEY) == 0:
+            self.congruentSamples = True
+        else:
+            self.congruentSamples = False
+        if self.verbose:
+            print "Congruent SNPs:", self.congruentSNPs
+            print "Congruent samples:", self.congruentSamples
 
+    def findEquivalence(self, allowFlip=False):
+        """Find equivalence (or otherwise) of input data sets
+
+        Requires no call mismatches, and congruent SNP/sample sets
+        May be fully equivalent, or to within flip of major/minor alleles
+        """
+        if self.mismatchRate==0:
+            callsEquivalent = True
+        elif allowFlip and self.flipMismatchRate==1:
+            # all mismatches are flips of major/minor allele
+            callsEquivalent = True
+        else:
+            callsEquivalent = False
+        if self.congruentSamples and self.congruentSnps and callsEquivalent:
+            return True
+        else:
+            return False
+
+    def writeSnpData(self, outPath):
+        """Write a breakdown of stats for each SNP
+
+        Plink diff doesn't break down how many non-null calls for each SNP
+        So, only report mismatch rates with respect to all calls"""
+        head = ["#SNP", "MISMATCH", "MISMATCH_RATE", "FLIP", "FLIP_RATE"]
+        out = open(outPath, 'w')
+        out.write("\t".join(head)+"\n")
+        snps = self.data.getSnpList()
+        sampleTotal = float(self.data.getGlobal(self.SAMPLES_KEY))
+        for snp in snps:
+            mismatch = self.data.getSnp(snp, self.MISMATCH_KEY)
+            mismatchRate = mismatch / sampleTotal
+            flip = self.data.getSnp(snp, self.ALLELE_FLIP_KEY)
+            flipRate = flip / sampleTotal
+            fields = (snp, mismatch, mismatchRate, flip, flipRate)
+            out.write("%s\t%d\t%.4f\t%d\t%.4f\n" % fields)
+        out.close()
+
+    def writeSampleData(self, outPath):
+        """As with writeSnpData(), but with breakdown by sample"""
+        head = ["#FAMILY_ID", "INDIVIDUAL_ID", "MISMATCH", "MISMATCH_RATE", 
+                "FLIP", "FLIP_RATE"]
+        out = open(outPath, 'w')
+        out.write("\t".join(head)+"\n")
+        samples = self.data.getSampleList()
+        snpTotal = float(self.data.getGlobal(self.SNPS_KEY))
+        for sample in samples:
+            (fid, iid) = sample # (family, individual) ID
+            mismatch = self.data.getSample(sample, self.MISMATCH_KEY)
+            mismatchRate = mismatch / snpTotal
+            flip = self.data.getSample(sample, self.ALLELE_FLIP_KEY)
+            flipRate = flip / snpTotal
+            fields = (fid, iid, mismatch, mismatchRate, flip, flipRate)
+            out.write("%s\t%s\t%d\t%.4f\t%d\t%.4f\n" % fields)
+        out.close()
+
+    def writeSummaryJson(self, outPath):
+        """Write basic summary stats to file in .json format
+
+        Write derived statistics, and values from raw data"""
+        summary = {
+            'MISMATCH': self.mismatchRate,
+            'CONCORDANCE': 1 - self.mismatchRate,
+            'MISMATCH_NON_NULL': self.mismatchNNRate,
+            'CONCORDANCE_NON_NULL': 1 - self.mismatchNNRate,
+            'FLIP_RATE': self.flipRate,
+            'FLIP_MISMATCH_RATE': self.flipMismatchRate,
+            'SAMPLES_CONGRUENT': self.congruentSamples,
+            'SNPS_CONGRUENT': self.congruentSNPs,
+            'EQUIVALENT': self.equivalent,
+            'EQUIVALENT_WITHIN_FLIP': self.equivalentWithinFlip
+            }
+        dataGlobal = self.data.getGlobalDictionary()
+        out = open(outPath, 'w')
+        out.write(json.dumps([summary, dataGlobal]))
+        out.close()
 
 def main():
-    import sys
     stem1 = sys.argv[1]
     stem2 = sys.argv[2]
     out = sys.argv[3]
-    data = PlinkDiffParser().run(stem1, stem2, out, True)    
-    PlinkDiffWriter(data)
+    verbose = False
+    data = PlinkDiffParser().run(stem1, stem2, out, verbose)    
+    writer = PlinkDiffWriter(data, verbose)
+    writer.writeSnpData(out+'_snps.txt')
+    writer.writeSampleData(out+'_samples.txt')
+    writer.writeSummaryJson(out+'_summary.json')
 
 if __name__ == "__main__":
     main()
