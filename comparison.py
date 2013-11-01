@@ -468,6 +468,7 @@ class PlinkDiffWriter(PlinkDiffShared):
         """Write basic summary stats to file in .json format
 
         Write derived statistics, and values from raw data"""
+        # TODO put summary hash keys in PlinkDiffShared
         summary = {
             'MISMATCH': self.mismatchRate,
             'CONCORDANCE': 1 - self.mismatchRate,
