@@ -21,7 +21,7 @@
 
 More straightforward interface and additional statistics"""
 
-import argparse
+import argparse, sys
 from plink import PlinkValidator, PlinkToolsError
 from comparison import PlinkDiffWrapper
 
@@ -35,7 +35,10 @@ def main():
                          help="Prefix for Plink output. Optional.")
      parser.add_argument('--uncompressed', required=False, 
                          action='store_true',
-                          help="Retain the raw, uncompressed .diff output from the Plink executable. (The uncompressed file may be very large.)")
+                         help="Retain the raw, uncompressed .diff output from the Plink executable. (The uncompressed file may be very large.)")
+     parser.add_argument('--brief', required=False, 
+                         action='store_true',
+                         help="Report only whether the two datasets differ; do not retain any other output.")
      parser.add_argument('--verbose', required=False, action='store_true',
                          help="Print additional information to stdout.")
      args = vars(parser.parse_args())
@@ -51,9 +54,16 @@ def main():
               raise PlinkToolsError("Non-binary Plink stem: "+stem)
      if args['out']==None: outStem = 'plinktools'
      else: outStem = args['out']
+     brief = args['brief']
      cleanup = not args['uncompressed'] # clean up the raw output?
      verbose = args['verbose']
-     PlinkDiffWrapper().run(stems[0], stems[1], outStem, cleanup, verbose)
+     equivalent = PlinkDiffWrapper().run(stems[0], stems[1], outStem, 
+                                         brief, cleanup, verbose)
+     if not equivalent:
+          sys.stderr.write("Plink binary datasets are not equivalent\n")
+          exit(1)
+     else:
+          exit(0)
 
 
 if __name__ == "__main__":

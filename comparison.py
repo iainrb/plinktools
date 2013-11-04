@@ -106,12 +106,12 @@ class PlinkDiffParser(PlinkDiffShared):
     def getData(self):
         return self.data
 
-    def parseDiffFile(self, stem, removeInput=False):
+    def parseDiffFile(self, stem, writeCompressed=True, removeInput=False):
         """Parse .diff output file from Plink, compress and find diff stats
         
         The .diff file has one line for each (snp, sample) pair that differs
         May be very large! Do not attempt to read entire file into memory
-        Convert .diff file into compressed .csv
+        If writeCompressed==True, convert .diff file into compressed .csv
         """
         diffPath = stem+'.diff'
         outPath = stem+'.diff.csv.gz'
@@ -121,8 +121,11 @@ class PlinkDiffParser(PlinkDiffShared):
         elif self.verbose:
             print "Plink .diff output file found."
         inFile = open(diffPath, 'r')
-        outFile = gzip.open(outPath, 'w')
-        outFile.write(csvHeader)
+        if writeCompressed:
+            outFile = gzip.open(outPath, 'w')
+            outFile.write(csvHeader)
+        else:
+            outFile = None
         firstLine = True
         while True:
             line = inFile.readline()
@@ -133,16 +136,16 @@ class PlinkDiffParser(PlinkDiffShared):
                 continue
             self.parseDiffLine(line, outFile)
         inFile.close()
-        outFile.close()
+        if outFile!=None: outFile.close()
         if self.verbose: print "Results read from Plink .diff output."
         if removeInput:
             os.remove(diffPath)
             if self.verbose: print "Removed original .diff file."
 
-    def parseDiffLine(self, line, outFile):
+    def parseDiffLine(self, line, outFile=None):
         """Line of .diff file represents a mismatched (snp, sample) pair"""
         fields = re.split('\s+', line.strip())
-        outFile.write(','.join(fields)+"\n")
+        if outFile!=None: outFile.write(','.join(fields)+"\n")
         (snp, fid, iid, newCall, oldCall) = fields
         sample = (fid, iid) # sample ID = (family, individual)
         self.data.incrementGlobal(self.MISMATCH_KEY)
@@ -207,14 +210,15 @@ class PlinkDiffParser(PlinkDiffShared):
         if not parsedOK:
             raise PlinkToolsError("Failed to parse Plink diff .log file!")
 
-    def run(self, stem1, stem2, outStem, cleanup=True, verbose=False):
+    def run(self, stem1, stem2, outStem, writeCompressed=True, cleanup=True, 
+            verbose=False):
         """Main method to run Plink diff and parse the output """
         self.verbose = verbose
         # if Plink diff output already present, do not run again
         if not (os.path.exists(outStem+".log") 
                 and os.path.exists(outStem+".diff")):
             self.runBinaryDiff(stem1, stem2, outStem)
-        self.parseDiffFile(outStem, cleanup)
+        self.parseDiffFile(outStem, writeCompressed, cleanup)
         self.parseLogFile(outStem)
         return self.data
 
@@ -473,9 +477,19 @@ class PlinkDiffWrapper:
         self.sampleSuffix = '_samples.txt'
         self.summaryJsonSuffix = '_summary.json'
 
-    def run(self, stem1, stem2, outStem, cleanup, verbose):        
-        data = PlinkDiffParser().run(stem1, stem2, outStem, cleanup, verbose)
+    def run(self, stem1, stem2, outStem, brief, cleanup, verbose):
+        writeCompressed = not brief
+        data = PlinkDiffParser().run(stem1, stem2, outStem, writeCompressed, 
+                                     cleanup, verbose)
         writer = PlinkDiffWriter(data, verbose)
-        writer.writeSnpData(outStem+self.snpSuffix)
-        writer.writeSampleData(outStem+self.sampleSuffix)
-        writer.writeSummaryJson(outStem+self.summaryJsonSuffix)
+        equivalent = writer.findEquivalence(allowFlip)
+        if not brief:
+            writer.writeSnpData(outStem+self.snpSuffix)
+            writer.writeSampleData(outStem+self.sampleSuffix)
+            writer.writeSummaryJson(outStem+self.summaryJsonSuffix)
+        else:
+            # remove Plink executable output
+            outPaths = [outStem+'.log', outStem+'.diff']
+            for outPath in outPaths:
+                if os.path.exists(outPath): os.remove(outPath)
+        return equivalent
