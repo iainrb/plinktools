@@ -89,26 +89,6 @@ class PlinkHandler:
         byteString = byteString[::-1] # reverse order of string characters
         return int(byteString, 2)    
 
-    def checkStem(self, stem):
-        """Check if given file stem is a valid binary or non-binary datset
-
-        If both types are present, binary takes precedence
-        Only checks for existence of files, not readability or correctness"""
-        binarySuffixes = ['.bed', '.bim', '.fam']
-        nonBinarySuffixes = ['.ped', '.map']
-        valid = True
-        binary = True
-        for suffix in binarySuffixes: 
-            if not os.path.exists(stem+suffix):
-                binary = False
-                break
-        if not binary:
-            for suffix in nonBinarySuffixes:
-                if not os.path.exists(stem+suffix):
-                    valid = False # neither binary nor non-binary exists
-                    break
-        return (valid, binary)
-
     def findBlockSize(self, sampleTotal):
         """Find number of bytes for each SNP
 
@@ -613,6 +593,26 @@ class PlinkValidator:
     def __init__(self):
         if not self.plinkAvailable():
             raise PlinkToolsError("Plink executable not found")
+
+    def checkStem(self, stem):
+        """Check if given file stem is a valid binary or non-binary datset
+
+        If both types are present, binary takes precedence
+        Only checks for existence of files, not readability or correctness"""
+        binarySuffixes = ['.bed', '.bim', '.fam']
+        nonBinarySuffixes = ['.ped', '.map']
+        valid = True
+        binary = True
+        for suffix in binarySuffixes: 
+            if not os.path.exists(stem+suffix):
+                binary = False
+                break
+        if not binary:
+            for suffix in nonBinarySuffixes:
+                if not os.path.exists(stem+suffix):
+                    valid = False # neither binary nor non-binary exists
+                    break
+        return (valid, binary)
 
     def plinkAvailable(self):
         """Check that Plink executable is available on PATH"""
