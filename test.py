@@ -20,8 +20,8 @@
 import json, os, sys, unittest
 
 from tempfile import mkdtemp
-from plink import MafHetFinder, PlinkEquivalenceTester, PlinkMerger, \
-    PlinkValidator
+from plink import MafHetFinder, PlinkMerger, PlinkValidator
+from comparison import PlinkDiffWrapper
 from checksum import ChecksumFinder
 
 class TestPlink(unittest.TestCase):
@@ -33,22 +33,33 @@ class TestPlink(unittest.TestCase):
         self.checksum = ChecksumFinder()
         self.validator = PlinkValidator()
 
-    def test_equivalence(self):
-        """Test equivalence check on pairs of datasets"""
-        stem1 = os.path.join(self.dataDir, 'samples_part_100_small')
-        stem2 = os.path.join(self.dataDir, 'samples_part_100_small')
-        pet = PlinkEquivalenceTester()
-        match = pet.compareBinary(stem1, stem2)
-        self.assertTrue(match)
-        stem3 = os.path.join(self.dataDir, 'samples_part_101_small')
-        match = pet.compareBinary(stem1, stem3)
-        self.assertFalse(match)
+    def test_diff(self):
+        """Test diff comparison on pair of datasets"""
+        stem1 = os.path.join(self.dataDir, 'run1.gencall.smajor')
+        stem2 = os.path.join(self.dataDir, 'run1.illuminus')
+        outStem = os.path.join(self.outDir, 'test')
+        cleanup = True
+        verbose = True
+        PlinkDiffWrapper().run(stem1, stem2, outStem, cleanup, verbose)
+        summaryOld = os.path.join(self.dataDir,'comparison_test_summary.json')
+        summaryDataOld = json.loads(open(summaryOld).read())
+        summaryNew = os.path.join(outStem+'_summary.json')
+        summaryDataNew = json.loads(open(summaryNew).read())
+        self.assertEqual(summaryDataOld, summaryDataNew)
+        md5expected = ['ab108c8740011ee4cf431879dff5220a',
+                       '99b3fc25288f76b3038debd52d55afa9']
+        textPathsTest = [os.path.join(self.outDir, 'test_samples.txt'),
+                         os.path.join(self.outDir, 'test_snps.txt') ]
+        for i in range(len(textPathsTest)):
+            md5 = self.checksum.getMD5hex(textPathsTest[i])
+            self.assertEqual(md5, md5expected[i])
+        # do not check md5 on full diff output; gzip may not be deterministic
 
     def test_executables(self):
         """Check that executable scripts compile without crashing"""
-        scripts = ['compare.py', 'het_by_maf.py', 'merge_bed.py']
+        scripts = ['het_by_maf.py', 'merge_bed.py', 'diff.py']
         for script in scripts:
-            status = os.system(script+' --help > /dev/null')
+            status = os.system('./'+script+' --help > /dev/null')
             self.assertEqual(status, 0)
 
     def test_maf_het(self):
