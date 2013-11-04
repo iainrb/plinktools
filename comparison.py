@@ -19,49 +19,27 @@
 
 
 """
-Required comparison functions:
-- Are datasets equivalent?
-- Are datasets equivalent to within major/minor allele flips?
-- Are SNP sets congruent? If not, what is intersection?
-- Are sample sets congruent? If not, what is intersection?
-- Diff stats:
-  - Shared SNPs and samples
-  - Concordance on shared pairs, all calls
-  - Concordance on shared pairs, calls where both are non-null
-  - Breakdown by SNP and sample 
+Wrapper for Plink diff functionality
+Capture values from text output and reprocess into more useful formats
 
+Three component classes:
+- Parser for Plink output
+- Data structure to hold raw results
+- Interpreter to reprocess results and write to file
 
-For diff stats:
-A = Total shared pairs
-B = Total shared pairs where both are non-null
-P = Differing pairs, including null calls
-Q = Differing pairs, excluding null calls
-R = Differing pairs, excluding null calls and allele flips (??)
+Key diff metrics:
+- What is the intersection of samples/SNPs between datasets? Are there any 
+  samples/SNPs in one dataset which are not present in the other?
+- Are datasets equivalent? (Yes/no)
+- Are datasets equivalent to within 'flip' (transpose of major/minor alleles)?
+- Concordance on all shared calls (SNP/sample pairs)
+- Concordance on calls which are both non-null
+- Rate of calls with allele 'flip'
+- Proportion of mismatches equivalent to within flip
+- Breakdown of mismatches by SNP and sample
 
-Concordance values:
-1 - A/P
-1 - B/Q
-1 - B/R
-
-P,Q,R from Plink diff output
-A can be found from .bim, .fam files
-B requires horrible munging of Plink log text, still better than re-implementing the Plink diff
-
-Parse Plink diff for stats
-Separate checks for equivalence of SNPs, samples, calls
-
-Classes: PlinkDiffParser (run plink diff and parse output), PlinkComparator (main class with comparison functions), PlinkDiffResult (to read/write output)
-
-Idea for compact Plink diff format: Header lists shared samples & SNPs
-Let (i,j) be shared pair index
-List differences in the form (i, j, old call, new call)
-Or in JSON: sample -> snp -> (old, new)
-
-Back-end: Horrible munging of Plink diff output text
-Potentially to be replaced by parsing .bed files with Plinktools classes
-
-Front-end: Data structure(s) of raw results, use to calculate summary stats
-
+Note: Flips can be arbitrarily introduced by Plink operations such as recode, 
+and are reported as mismatches by the Plink diff.
 """
 
 import json, gzip, os, re, sys
@@ -93,6 +71,7 @@ class PlinkDiffShared:
     SAMPLES_2_KEY = INPUT_KEYS[3]
     NEW_SNPS_KEY = INPUT_KEYS[4] # SNPs in 2 but not in 1
     NEW_SAMPLES_KEY = INPUT_KEYS[5] # Samples in 2 but not in 1
+
 
 class PlinkDiffParser(PlinkDiffShared):
     """Run Plink's diff function and parse the output
@@ -231,6 +210,7 @@ class PlinkDiffParser(PlinkDiffShared):
     def run(self, stem1, stem2, outStem, verbose=False):
         """Main method to run Plink diff and parse the output """
         self.verbose = verbose
+        # if Plink diff output already present, do not run again
         if not (os.path.exists(outStem+".log") 
                 and os.path.exists(outStem+".diff")):
             self.runBinaryDiff(stem1, stem2, outStem)
@@ -486,16 +466,27 @@ class PlinkDiffWriter(PlinkDiffShared):
         out.write(json.dumps([summary, dataGlobal]))
         out.close()
 
+class PlinkDiffWrapper:
+    """Class with 'main' method to run Plink diff and write results"""
+
+    def __init__(self):
+        self.snpSuffix = '_snps.txt'
+        self.sampleSuffix = '_samples.txt'
+        self.summaryJsonSuffix = '_summary.json'
+
+    def run(self, stem1, stem2, outStem, verbose):        
+        data = PlinkDiffParser().run(stem1, stem2, outStem, verbose)    
+        writer = PlinkDiffWriter(data, verbose)
+        writer.writeSnpData(outStem+self.snpSuffix)
+        writer.writeSampleData(outStem+self.sampleSuffix)
+        writer.writeSummaryJson(outStem+self.summaryJsonSuffix)
+
 def main():
     stem1 = sys.argv[1]
     stem2 = sys.argv[2]
     out = sys.argv[3]
-    verbose = False
-    data = PlinkDiffParser().run(stem1, stem2, out, verbose)    
-    writer = PlinkDiffWriter(data, verbose)
-    writer.writeSnpData(out+'_snps.txt')
-    writer.writeSampleData(out+'_samples.txt')
-    writer.writeSummaryJson(out+'_summary.json')
+    verbose = True
+    PlinkDiffWrapper().run(stem1, stem2, out, verbose)
 
 if __name__ == "__main__":
     main()
