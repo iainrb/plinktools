@@ -207,14 +207,14 @@ class PlinkDiffParser(PlinkDiffShared):
         if not parsedOK:
             raise PlinkToolsError("Failed to parse Plink diff .log file!")
 
-    def run(self, stem1, stem2, outStem, verbose=False):
+    def run(self, stem1, stem2, outStem, cleanup=True, verbose=False):
         """Main method to run Plink diff and parse the output """
         self.verbose = verbose
         # if Plink diff output already present, do not run again
         if not (os.path.exists(outStem+".log") 
                 and os.path.exists(outStem+".diff")):
             self.runBinaryDiff(stem1, stem2, outStem)
-        self.parseDiffFile(outStem)
+        self.parseDiffFile(outStem, cleanup)
         self.parseLogFile(outStem)
         return self.data
 
@@ -412,7 +412,7 @@ class PlinkDiffWriter(PlinkDiffShared):
 
         Plink diff doesn't break down how many non-null calls for each SNP
         So, only report mismatch rates with respect to all calls"""
-        head = ["#SNP", "MISMATCH", "MISMATCH_RATE", "FLIP", "FLIP_RATE"]
+        head = ["SNP", "MISMATCH", "MISMATCH_RATE", "FLIP", "FLIP_RATE"]
         out = open(outPath, 'w')
         out.write("\t".join(head)+"\n")
         snps = self.data.getSnpList()
@@ -428,7 +428,7 @@ class PlinkDiffWriter(PlinkDiffShared):
 
     def writeSampleData(self, outPath):
         """As with writeSnpData(), but with breakdown by sample"""
-        head = ["#FAMILY_ID", "INDIVIDUAL_ID", "MISMATCH", "MISMATCH_RATE", 
+        head = ["FAMILY_ID", "INDIVIDUAL_ID", "MISMATCH", "MISMATCH_RATE", 
                 "FLIP", "FLIP_RATE"]
         out = open(outPath, 'w')
         out.write("\t".join(head)+"\n")
@@ -448,7 +448,6 @@ class PlinkDiffWriter(PlinkDiffShared):
         """Write basic summary stats to file in .json format
 
         Write derived statistics, and values from raw data"""
-        # TODO put summary hash keys in PlinkDiffShared
         summary = {
             'MISMATCH': self.mismatchRate,
             'CONCORDANCE': 1 - self.mismatchRate,
@@ -474,19 +473,9 @@ class PlinkDiffWrapper:
         self.sampleSuffix = '_samples.txt'
         self.summaryJsonSuffix = '_summary.json'
 
-    def run(self, stem1, stem2, outStem, verbose):        
-        data = PlinkDiffParser().run(stem1, stem2, outStem, verbose)    
+    def run(self, stem1, stem2, outStem, cleanup, verbose):        
+        data = PlinkDiffParser().run(stem1, stem2, outStem, cleanup, verbose)
         writer = PlinkDiffWriter(data, verbose)
         writer.writeSnpData(outStem+self.snpSuffix)
         writer.writeSampleData(outStem+self.sampleSuffix)
         writer.writeSummaryJson(outStem+self.summaryJsonSuffix)
-
-def main():
-    stem1 = sys.argv[1]
-    stem2 = sys.argv[2]
-    out = sys.argv[3]
-    verbose = True
-    PlinkDiffWrapper().run(stem1, stem2, out, verbose)
-
-if __name__ == "__main__":
-    main()
