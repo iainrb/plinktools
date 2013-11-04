@@ -19,10 +19,11 @@
 
 """Wrapper script for Plink's diff capability
 
-More intuitive interface and additional statistics"""
+More straightforward interface and additional statistics"""
 
-import argparse, os, sys
-from plink import PlinkDiff, PlinkToolsError
+import argparse
+from plink import PlinkValidator, PlinkToolsError
+from comparison import PlinkDiffWrapper
 
 def main():
      """Method to run as script from command line"""
@@ -32,23 +33,28 @@ def main():
                          metavar="PATH", help="Prefix for Plink datasets. Must be specified exactly twice. Input datasets must both be in binary format.")
      parser.add_argument('--out', required=False, metavar="PATH", 
                          help="Prefix for Plink output. Optional.")
+     parser.add_argument('--uncompressed', required=False, 
+                         action='store_true',
+                          help="Retain the raw, uncompressed .diff output from the Plink executable. (The uncompressed file may be very large.)")
      parser.add_argument('--verbose', required=False, action='store_true',
                          help="Print additional information to stdout.")
      args = vars(parser.parse_args())
-     pd = PlinkDiff()
      stems = args['in']
+     validator = PlinkValidator()
      if len(stems)!=2:
          raise ValueError("Must specify exactly two Plink input stems")
      for stem in stems:
-         (valid, binary) = pd.checkStem(stem)
-         if not valid: raise PlinkToolsError("Invalid Plink stem: "+stem)
-         elif not binary: raise PlinkToolsError("Non-binary Plink stem: "+stem)
-     verbose = args['verbose']
-     if verbose: print "Running Plink diff."
-     if args['out']==None: outStem = 'plinktools_diff'
+         (valid, binary) = validator.checkStem(stem)
+         if not valid: 
+              raise PlinkToolsError("Invalid Plink stem: "+stem)
+         elif not binary: 
+              raise PlinkToolsError("Non-binary Plink stem: "+stem)
+     if args['out']==None: outStem = 'plinktools'
      else: outStem = args['out']
-     pd.runPlinkBinary(stems[0], stems[1], outStem, verbose)
-     pd.parsePlinkDiff(outStem)
+     cleanup = not args['uncompressed'] # clean up the raw output?
+     verbose = args['verbose']
+     PlinkDiffWrapper().run(stems[0], stems[1], outStem, cleanup, verbose)
+
 
 if __name__ == "__main__":
     main()
