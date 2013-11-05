@@ -27,18 +27,19 @@ from comparison import PlinkDiffWrapper
 
 def main():
      """Method to run as script from command line"""
-     description = "Compute differences between two Plink binary datasets."
-     parser = argparse.ArgumentParser(description=description)   
+     description = "Wrapper for the diff function of the Plink executable. Compute differences between two Plink binary datasets."
+     epilog = "The 'prefix' for input is the path to a Plink binary dataset without filename extensions (.bed, .bim, .fam)."
+     parser = argparse.ArgumentParser(description=description, epilog=epilog)
      parser.add_argument('--in', required=True, action='append', 
                          metavar="PATH", help="Prefix for Plink datasets. Must be specified exactly twice. Input datasets must both be in binary format.")
      parser.add_argument('--out', required=False, metavar="PATH", 
-                         help="Prefix for Plink output. Optional.")
+                         help="Prefix for output files. Optional.")
      parser.add_argument('--uncompressed', required=False, 
                          action='store_true',
                          help="Retain the raw, uncompressed .diff output from the Plink executable. (The uncompressed file may be very large.)")
      parser.add_argument('--brief', required=False, 
                          action='store_true',
-                         help="Report only whether the two datasets differ; do not retain any other output.")
+                         help="Report only whether the two datasets differ; delete all output from Plink and do not write any additional files.")
      parser.add_argument('--verbose', required=False, action='store_true',
                          help="Print additional information to stdout.")
      args = vars(parser.parse_args())
