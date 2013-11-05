@@ -22,14 +22,14 @@
 Wrapper for Plink diff functionality
 Capture values from text output and reprocess into more useful formats
 
-Three component classes:
+Component classes include:
 - Parser for Plink output
 - Data structure to hold raw results
 - Interpreter to reprocess results and write to file
 
 Key diff metrics:
-- What is the intersection of samples/SNPs between datasets? Are there any 
-  samples/SNPs in one dataset which are not present in the other?
+- What is the intersection of samples/SNPs between datasets? Conversely, what 
+  samples/SNPs are present in one dataset but not the other?
 - Are datasets equivalent? (Yes/no)
 - Are datasets equivalent to within 'flip' (transpose of major/minor alleles)?
 - Concordance on all shared calls (SNP/sample pairs)
@@ -233,7 +233,8 @@ class PlinkDiffParser(PlinkDiffShared):
         if not self.verbose: cmd = cmd+" > /dev/null"
         status = os.system(cmd)
         if status!=0:
-            msg = "Non-zero exit status from Plink executable!"
+            msg = "Non-zero exit status from Plink executable! Check "+\
+                outStem+".log for details."
             raise PlinkToolsError(msg)
 
 class PlinkDiffData(PlinkDiffShared):
@@ -346,6 +347,12 @@ class PlinkDiffWriter(PlinkDiffShared):
         self.equivalent = self.findEquivalence(allowFlip=False)
         self.equivalentWithinFlip = self.findEquivalence(allowFlip=True)
 
+    def isEquivalent(self):
+        return self.equivalent
+
+    def isEquivalentWithinFlip(self):
+        return self.equivalentWithinFlip
+
     def findConcordance(self):
         """ Find concordance on shared (sample, snp) pairs """
         calls = self.data.getGlobal(self.CALLS_KEY)
@@ -371,13 +378,19 @@ class PlinkDiffWriter(PlinkDiffShared):
             self.flipMismatchRate = None
         else:
             self.flipMismatchRate = flip / float(mismatch)
+        # stringify and print to standard output
         if self.verbose:
-            print "Concordance: %.4f" % (1 - self.mismatchRate)
-            print "Concordance on non-null calls: %.4f" % \
-                (1-self.mismatchNNRate)
-            print "Allele flip rate: %.4f" % self.flipRate
-            print "Flips as proportion of mismatches: %.4f" % \
-                self.flipMismatchRate
+            headers = ["Concordance:",
+                       "Concordance on non-null calls:",
+                       "Allele flip rate:",
+                       "Flips as proportion of mismatches:"]
+            values = [self.mismatchRate, self.mismatchNNRate,
+                      self.flipRate, self.flipMismatchRate ]
+            for i in range(len(values)):
+                if values[i]==None: output = 'NA'
+                elif i==0 or i==1: output = "%.4f" % (1 - values[i])
+                else: output = "%.4f" % values[i]
+                print headers[i], output
 
     def findCongruence(self):
         """Find congruence (or otherwise) of input SNP and samples sets"""
@@ -406,7 +419,7 @@ class PlinkDiffWriter(PlinkDiffShared):
             callsEquivalent = True
         else:
             callsEquivalent = False
-        if self.congruentSamples and self.congruentSnps and callsEquivalent:
+        if self.congruentSamples and self.congruentSNPs and callsEquivalent:
             return True
         else:
             return False
@@ -482,7 +495,6 @@ class PlinkDiffWrapper:
         data = PlinkDiffParser().run(stem1, stem2, outStem, writeCompressed, 
                                      cleanup, verbose)
         writer = PlinkDiffWriter(data, verbose)
-        equivalent = writer.findEquivalence(allowFlip)
         if not brief:
             writer.writeSnpData(outStem+self.snpSuffix)
             writer.writeSampleData(outStem+self.sampleSuffix)
@@ -492,4 +504,4 @@ class PlinkDiffWrapper:
             outPaths = [outStem+'.log', outStem+'.diff']
             for outPath in outPaths:
                 if os.path.exists(outPath): os.remove(outPath)
-        return equivalent
+        return writer.isEquivalent()
