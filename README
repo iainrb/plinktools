@@ -4,27 +4,15 @@ Author: Iain Bancarz, ib5@sanger.ac.uk
 
 1. INTRODUCTION
 
-Plinktools is a Python package for processing Plink format genotyping data. It 
-was developed for the following applications not supported by the standard 
+Plinktools is a Python package for processing Plink format genotyping data. 
+It was developed for the following applications not supported by the standard 
 Plink executable.
 
-1.1 Equivalence test
+1.1 Fast binary merge
 
-Plink does not directly support an equivalence test on two datasets. The 
---merge option does allow a diff on SNP calls, but this does not check whether 
-the SNP and sample sets match. In addition, certain Plink operations (such as 
-merge) may transpose the major and minor alleles in a SNP set, and such a 
-transpose is regarded as a mismatch by the Plink diff. (See also 1.4: Extended 
-diff.)
-
-Plinktools allows an equivalence test on pairs of binary or non-binary Plink 
-files, with major/minor allele swaps regarded as matching.
-
-1.2 Fast binary merge
-
-The standard Plink merge function performs extended cross-checking and recoding 
-of data. This is rather slow, and does not scale well with an increasing 
-number of inputs.
+The standard Plink merge function performs extended cross-checking and 
+recoding of data. This is rather slow, and does not scale well with an 
+increasing number of inputs.
 
 To address this issue, Plinktools implements a fast binary merge for two 
 important special cases: Congruent SNP sets with disjoint samples, and 
@@ -35,25 +23,37 @@ for recoding. For congruent SNPs, a fast merge can be done if the number of
 samples in each input is divisible by 4; otherwise recoding is necessary and 
 the merge will be slowed, although still somewhat faster than Plink.
 
-1.3 Heterozygosity calculation by high/low MAF
+1.2 Heterozygosity calculation by high/low MAF
 
 As part of the Wellcome Trust Oxford SOP for exome chip QC, heterozygosity 
 for each sample is calculated separately for SNPs with minor allele frequency 
 above and below 1%. This test has been implemented in Plinktools.
 
-1.4 Extended diff
+1.3 Extended diff
 
 A wrapper for Plink's capability to compare two datasets. It constructs and 
 executes the appropriate command, computes some additional statistics, and 
-records the results in machine-readable JSON format.
+records the results in machine-readable JSON format. The script reports
+all differing calls, and those which differ only by transposition of major
+and minor alleles. (Such a transposition may be introduced by certain Plink
+recoding operations.)
+
+The extended diff also supports a simple equivalence test on two datasets,
+via the --diff option.  The standard Plink executable does not provide a 
+simple yes/no diff.
+
+The extended diff obtains its input solely from the output of the Plink
+executable. Specifically, it parses text output from Plink 1.0.7 and is not 
+guaranteed to work with any other version. It does not use any of the 
+plinktools Python classes to parse .bed files directly, although it could be 
+adapted to do so.
 
 2. USAGE
 
 2.1 Contents
 
-Plinktools includes four front-end scripts:
+Plinktools includes three front-end scripts:
 
-compare.py to compare two Plink datasets (binary or non-binary)
 merge_bed.py to merge two or more Plink binary datasets
 het_by_maf.py to compute heterozygosity for high/low MAF
 diff.py for extended diff
