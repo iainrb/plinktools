@@ -552,31 +552,10 @@ class MafHetFinder(PlinkHandler):
             try: hmh = counts[i][1]/highTotal # high MAF het
             except ZeroDivisionError: hmh = 0
             allHet = (counts[i][0] + counts[i][1])/snpTotal
-            out.write("%s\t%s\t%s\n" % (round(lmh, digits), round(hmh, digits),
+            out.write("%s\t%s\t%s\n" % (round(lmh, digits), 
+                                        round(hmh, digits),
                                         round(allHet, digits)))
         out.close()
-
-
-
-class PlinkDiff(PlinkHandler):
-
-    """Wrapper class for Plink's diff capability"""
-
-    # inherits __init__ from PlinkHandler, checks Plink executable is available
-
-    def runPlinkBinary(self, stem1, stem2, outStem, verbose=False):
-        """Run Plink executable with appropriate options to find diff 
-
-        Inputs: Stems for two Plink binary input datasets, and for output
-        Stem is Plink file path without .bed, .bim, .fam extension"""
-        bmerge = "%s.bed %s.bim %s.fam" % (stem2, stem2, stem2)
-        cmd = "plink --noweb --bfile "+stem1+" --bmerge "+bmerge+\
-            " --make-bed --merge-mode 6 --out "+outStem
-        if not verbose: cmd = cmd+" > /dev/null"
-        status = os.system(cmd)
-        if status!=0:
-            raise PlinkToolsError("Non-zero exit status from Plink executable")
-
 
 
 
