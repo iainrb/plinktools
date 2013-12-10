@@ -39,7 +39,7 @@ and minor alleles. (Such a transposition may be introduced by certain Plink
 recoding operations.)
 
 The extended diff also supports a simple equivalence test on two datasets,
-via the --diff option.  The standard Plink executable does not provide a 
+via the --brief option.  The standard Plink executable does not provide a 
 simple yes/no diff.
 
 The extended diff obtains its input solely from the output of the Plink
