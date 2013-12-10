@@ -38,9 +38,10 @@ class TestPlink(unittest.TestCase):
         stem1 = os.path.join(self.dataDir, 'run1.gencall.smajor')
         stem2 = os.path.join(self.dataDir, 'run1.illuminus')
         outStem = os.path.join(self.outDir, 'test')
+        brief = False
         cleanup = True
         verbose = True
-        PlinkDiffWrapper().run(stem1, stem2, outStem, cleanup, verbose)
+        PlinkDiffWrapper().run(stem1, stem2, outStem, brief, cleanup, verbose)
         summaryOld = os.path.join(self.dataDir,'comparison_test_summary.json')
         summaryDataOld = json.loads(open(summaryOld).read())
         summaryNew = os.path.join(outStem+'_summary.json')
