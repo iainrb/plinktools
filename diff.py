@@ -30,8 +30,10 @@ def main():
      description = "Wrapper for the diff function of the Plink executable. Compute differences between two Plink binary datasets."
      epilog = "The 'prefix' for input is the path to a Plink binary dataset without filename extensions (.bed, .bim, .fam)."
      parser = argparse.ArgumentParser(description=description, epilog=epilog)
-     parser.add_argument('--in', required=True, action='append', 
-                         metavar="PATH", help="Prefix for Plink datasets. Must be specified exactly twice. Input datasets must both be in binary format.")
+     parser.add_argument('--in1', required=True, 
+                         metavar="PATH", help="First input stem. Prefix for a Plink binary dataset.")
+     parser.add_argument('--in2', required=True, 
+                         metavar="PATH", help="Second input stem. Similar to --in1 above.")
      parser.add_argument('--out', required=False, metavar="PATH", 
                          help="Prefix for output files. Optional.")
      parser.add_argument('--uncompressed', required=False, 
@@ -42,17 +44,17 @@ def main():
                          help="Report only whether the two datasets differ; delete all output from Plink and do not write any additional files.")
      parser.add_argument('--verbose', required=False, action='store_true',
                          help="Print additional information to stdout.")
+     # Have --in1 and --in2 because Percolate workflows require all command line option names to be distinct; so we can't specify the --in option twice.
      args = vars(parser.parse_args())
-     stems = args['in']
+     stems = (args['in1'], args['in2'])
      validator = PlinkValidator()
-     if len(stems)!=2:
-         raise ValueError("Must specify exactly two Plink input stems")
      for stem in stems:
-         (valid, binary) = validator.checkStem(stem)
-         if not valid: 
-              raise PlinkToolsError("Invalid Plink stem: "+stem)
-         elif not binary: 
-              raise PlinkToolsError("Non-binary Plink stem: "+stem)
+          if stem==None: valid = False
+          else: (valid, binary) = validator.checkStem(stem)
+          if not valid: 
+               raise PlinkToolsError("Invalid Plink stem: "+str(stem))
+          elif not binary: 
+               raise PlinkToolsError("Non-binary Plink stem: "+str(stem))
      if args['out']==None: outStem = 'plinktools'
      else: outStem = args['out']
      brief = args['brief']
