@@ -362,19 +362,22 @@ class PlinkDiffWriter(PlinkDiffShared):
         flip = self.data.getGlobal(self.ALLELE_FLIP_KEY)
         # make sure we do not divide by zero
         if calls==0:
-            sys.stderr.write("No shared calls in Plink data\n")
+            if self.verbose:
+                sys.stderr.write("No shared calls in Plink data\n")
             self.mismatchRate = None
         else:
             self.mismatchRate = mismatch / float(calls)
         if callsNN==0:
-            sys.stderr.write("No non-null shared calls in Plink data\n")
+            if self.verbose:
+                sys.stderr.write("No non-null shared calls in Plink data\n")
             self.mismatchNNRate = None
             self.flipRate = None
         else:
             self.mismatchNNRate = mismatchNN / float(callsNN)
             self.flipRate = flip / float(callsNN)
         if mismatch==0:
-            sys.stderr.write("No mismatched calls in Plink data\n")
+            if self.verbose:
+                sys.stderr.write("No mismatched calls in Plink data\n")
             self.flipMismatchRate = None
         else:
             self.flipMismatchRate = flip / float(mismatch)
