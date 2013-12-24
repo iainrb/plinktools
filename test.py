@@ -33,6 +33,9 @@ class TestPlink(unittest.TestCase):
         self.checksum = ChecksumFinder()
         self.validator = PlinkValidator()
 
+    def tearDown(self):
+        os.system("rm -Rf "+self.outDir)
+
     def test_diff(self):
         """Test diff comparison on pair of datasets"""
         stem1 = os.path.join(self.dataDir, 'run1.gencall.smajor')
@@ -58,7 +61,7 @@ class TestPlink(unittest.TestCase):
 
     def test_executables(self):
         """Check that executable scripts compile without crashing"""
-        scripts = ['het_by_maf.py', 'merge_bed.py', 'diff.py']
+        scripts = ['het_by_maf.py', 'merge_bed.py', 'plink_diff.py']
         for script in scripts:
             status = os.system('./'+script+' --help > /dev/null')
             self.assertEqual(status, 0)
