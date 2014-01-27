@@ -106,7 +106,7 @@ class PlinkDiffParser(PlinkDiffShared):
     def getData(self):
         return self.data
 
-    def parseDiffFile(self, stem, writeCompressed=True, removeInput=False):
+    def parseDiffFile(self, stem, removeInput=False):
         """Parse .diff output file from Plink, compress and find diff stats
         
         The .diff file has one line for each (snp, sample) pair that differs
@@ -114,38 +114,32 @@ class PlinkDiffParser(PlinkDiffShared):
         If writeCompressed==True, convert .diff file into compressed .csv
         """
         diffPath = stem+'.diff'
-        outPath = stem+'.diff.csv.gz'
-        csvHeader = 'SNP,FID,IID,NEW,OLD\n'
         if not (os.path.exists(diffPath)):
             raise PlinkToolsError("Plink .diff output file not found!")
         elif self.verbose:
             print "Plink .diff output file found."
         inFile = open(diffPath, 'r')
-        if writeCompressed:
-            outFile = gzip.open(outPath, 'w')
-            outFile.write(csvHeader)
-        else:
-            outFile = None
         firstLine = True
+        i = 0
         while True:
+            i += 1
             line = inFile.readline()
             if line=='':  # end of file
                 break
             elif firstLine: # skip header line
                 firstLine = False
                 continue
-            self.parseDiffLine(line, outFile)
+            self.parseDiffLine(line)
+            if self.verbose and i % 1000000 == 0: print i, "lines read."
         inFile.close()
-        if outFile!=None: outFile.close()
         if self.verbose: print "Results read from Plink .diff output."
         if removeInput:
             os.remove(diffPath)
             if self.verbose: print "Removed original .diff file."
 
-    def parseDiffLine(self, line, outFile=None):
+    def parseDiffLine(self, line):
         """Line of .diff file represents a mismatched (snp, sample) pair"""
         fields = re.split('\s+', line.strip())
-        if outFile!=None: outFile.write(','.join(fields)+"\n")
         (snp, fid, iid, newCall, oldCall) = fields
         sample = (fid, iid) # sample ID = (family, individual)
         self.data.incrementGlobal(self.MISMATCH_KEY)
@@ -210,15 +204,14 @@ class PlinkDiffParser(PlinkDiffShared):
         if not parsedOK:
             raise PlinkToolsError("Failed to parse Plink diff .log file!")
 
-    def run(self, stem1, stem2, outStem, writeCompressed=True, cleanup=True, 
-            verbose=False):
+    def run(self, stem1, stem2, outStem, cleanup=True, verbose=False):
         """Main method to run Plink diff and parse the output """
         self.verbose = verbose
         # if Plink diff output already present, do not run again
         if not (os.path.exists(outStem+".log") 
                 and os.path.exists(outStem+".diff")):
             self.runBinaryDiff(stem1, stem2, outStem)
-        self.parseDiffFile(outStem, writeCompressed, cleanup)
+        self.parseDiffFile(outStem, cleanup)
         self.parseLogFile(outStem)
         return self.data
 
@@ -324,11 +317,15 @@ class PlinkDiffData(PlinkDiffShared):
             self.addSnp(snp)
             self.snpTotals[snp][key] += 1
 
-    def getSnpList(self):
-        return self.snpTotals.keys()
+    def getSortedSnpList(self):
+        snps = self.snpTotals.keys()
+        snps.sort()
+        return snps
 
-    def getSampleList(self):
-        return self.sampleTotals.keys()
+    def getSortedSampleList(self):
+        samples = self.sampleTotals.keys()
+        samples.sort()
+        return samples
 
 class PlinkDiffWriter(PlinkDiffShared):
     """Take diff data, calculate additional stats and write output"""
@@ -435,7 +432,7 @@ class PlinkDiffWriter(PlinkDiffShared):
         head = ["SNP", "MISMATCH", "MISMATCH_RATE", "FLIP", "FLIP_RATE"]
         out = open(outPath, 'w')
         out.write("\t".join(head)+"\n")
-        snps = self.data.getSnpList()
+        snps = self.data.getSortedSnpList()
         sampleTotal = float(self.data.getGlobal(self.SAMPLES_KEY))
         for snp in snps:
             mismatch = self.data.getSnp(snp, self.MISMATCH_KEY)
@@ -452,7 +449,7 @@ class PlinkDiffWriter(PlinkDiffShared):
                 "FLIP", "FLIP_RATE"]
         out = open(outPath, 'w')
         out.write("\t".join(head)+"\n")
-        samples = self.data.getSampleList()
+        samples = self.data.getSortedSampleList()
         snpTotal = float(self.data.getGlobal(self.SNPS_KEY))
         for sample in samples:
             (fid, iid) = sample # (family, individual) ID
@@ -493,15 +490,21 @@ class PlinkDiffWrapper:
         self.sampleSuffix = '_samples.txt'
         self.summaryJsonSuffix = '_summary.json'
 
-    def run(self, stem1, stem2, outStem, brief, cleanup, verbose):
-        writeCompressed = not brief
-        data = PlinkDiffParser().run(stem1, stem2, outStem, writeCompressed, 
-                                     cleanup, verbose)
+    def run(self, stem1, stem2, outStem, brief, gzip, verbose):
+        # if "brief", then clean up .diff file in PlinkDiffParser
+        data = PlinkDiffParser().run(stem1, stem2, outStem, brief, verbose)
         writer = PlinkDiffWriter(data, verbose)
         if not brief:
             writer.writeSnpData(outStem+self.snpSuffix)
             writer.writeSampleData(outStem+self.sampleSuffix)
             writer.writeSummaryJson(outStem+self.summaryJsonSuffix)
+            # do not use Python's gzip class
+            # memory issues for large files (~6G) even in line-by-line mode
+            if gzip:
+                cmd = 'gzip '+outStem+'.diff'
+                status = os.system(cmd)
+                if status != 0:
+                    raise PlinkToolsError('Non-zero exit status from: '+cmd)
         else:
             # remove Plink executable output
             outPaths = [outStem+'.log', outStem+'.diff']

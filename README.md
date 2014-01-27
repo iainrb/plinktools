@@ -1,14 +1,28 @@
 Plinktools: Python code to process Plink genotyping files
+=========================================================
 
 Author: Iain Bancarz, ib5@sanger.ac.uk
 
-1. INTRODUCTION
+Introduction
+------------
 
 Plinktools is a Python package for processing Plink format genotyping data. 
 It was developed for the following applications not supported by the standard 
-Plink executable.
+Plink executable. Plinktools functions and respective executable scripts are:
 
-1.1 Fast binary merge
+1. Fast merge of binary datasets: `merge_bed.py`
+2. Heterozygosity calculation by high/low MAF: `het_by_maf.py`
+3. Extended diff functionality: `plink_diff.py`
+
+Run any script with --help for more information.
+
+Prerequisites are Python >= 2.7 and Plink 1.0.7. The `plink` executable should 
+be visible in the PATH variable. The `plink_diff.py` script parses the log 
+text from the Plink executable, and is not guaranteed to work with any 
+version of Plink other than 1.0.7.
+
+Fast binary merge
+-----------------
 
 The standard Plink merge function performs extended cross-checking and 
 recoding of data. This is rather slow, and does not scale well with an 
@@ -23,50 +37,23 @@ for recoding. For congruent SNPs, a fast merge can be done if the number of
 samples in each input is divisible by 4; otherwise recoding is necessary and 
 the merge will be slowed, although still somewhat faster than Plink.
 
-1.2 Heterozygosity calculation by high/low MAF
+Heterozygosity calculation by high/low MAF
+------------------------------------------
 
 As part of the Wellcome Trust Oxford SOP for exome chip QC, heterozygosity 
 for each sample is calculated separately for SNPs with minor allele frequency 
 above and below 1%. This test has been implemented in Plinktools.
 
-1.3 Extended diff
+Extended diff
+-------------
 
 A wrapper for Plink's capability to compare two datasets. It constructs and 
 executes the appropriate command, computes some additional statistics, and 
-records the results in machine-readable JSON format. The script reports
-all differing calls, and those which differ only by transposition of major
-and minor alleles. (Such a transposition may be introduced by certain Plink
-recoding operations.)
+records the results in machine-readable JSON format. It also supports a 
+simple equivalence test on two datasets, via the --brief option.
 
-The extended diff also supports a simple equivalence test on two datasets,
-via the --brief option.  The standard Plink executable does not provide a 
-simple yes/no diff.
-
-The extended diff obtains its input solely from the output of the Plink
-executable. Specifically, it parses text output from Plink 1.0.7 and is not 
-guaranteed to work with any other version. It does not use any of the 
-plinktools Python classes to parse .bed files directly, although it could be 
-adapted to do so.
-
-2. USAGE
-
-2.1 Contents
-
-Plinktools includes three front-end scripts:
-
-merge_bed.py to merge two or more Plink binary datasets
-het_by_maf.py to compute heterozygosity for high/low MAF
-diff.py for extended diff
-
-Run any script with --help for more information.
-
-2.2 Prerequisites
-
-Python >= 2.7
-Plink executable should be on the PATH environment variable: Required for 
-tests and diff functionality.
-
-3. SEE ALSO
+References
+----------
 
 The Plink data format was created by Shaun Purcell et al. See: 
 http://pngu.mgh.harvard.edu/~purcell/plink

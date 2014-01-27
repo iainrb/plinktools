@@ -25,6 +25,11 @@ import argparse, sys
 from plink import PlinkValidator, PlinkToolsError
 from comparison import PlinkDiffWrapper
 
+# want options:
+# retain NO detailed output (--brief)
+# retain gzipped output (--gzip)
+# otherwise, retain uncompressed output
+
 def main():
      """Method to run as script from command line"""
      description = "Wrapper for the diff function of the Plink executable. Compute differences between two Plink binary datasets."
@@ -36,12 +41,12 @@ def main():
                          metavar="PATH", help="Second input stem. Similar to --in1 above.")
      parser.add_argument('--out', required=False, metavar="PATH", 
                          help="Prefix for output files. Optional.")
-     parser.add_argument('--uncompressed', required=False, 
-                         action='store_true',
-                         help="Retain the raw, uncompressed .diff output from the Plink executable. (The uncompressed file may be very large.)")
      parser.add_argument('--brief', required=False, 
                          action='store_true',
                          help="Report only whether the two datasets differ; delete all output from Plink and do not write any additional files.")
+     parser.add_argument('--gzip', required=False, 
+                         action='store_true',
+                         help="Create a gzip compressed copy of the .diff output from the Plink executable. Only relevant if --brief is not enabled. If neither --brief nor --gzip is enabled, the uncompressed Plink .diff output (which may be quite large) will be retained.")
      parser.add_argument('--verbose', required=False, action='store_true',
                          help="Print additional information to stdout.")
      # Have --in1 and --in2 because Percolate workflows require all command line option names to be distinct; so we can't specify the --in option twice.
@@ -58,10 +63,10 @@ def main():
      if args['out']==None: outStem = 'plinktools'
      else: outStem = args['out']
      brief = args['brief']
-     cleanup = not args['uncompressed'] # clean up the raw output?
+     gzip = args['gzip']
      verbose = args['verbose']
      equivalent = PlinkDiffWrapper().run(stems[0], stems[1], outStem, 
-                                         brief, cleanup, verbose)
+                                         brief, gzip, verbose)
      if not equivalent:
           sys.stderr.write("Plink binary datasets are not equivalent\n")
           exit(1)

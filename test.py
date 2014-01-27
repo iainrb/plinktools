@@ -33,9 +33,6 @@ class TestPlink(unittest.TestCase):
         self.checksum = ChecksumFinder()
         self.validator = PlinkValidator()
 
-    def tearDown(self):
-        os.system("rm -Rf "+self.outDir)
-
     def test_diff(self):
         """Test diff comparison on pair of datasets"""
         stem1 = os.path.join(self.dataDir, 'run1.gencall.smajor')
@@ -50,14 +47,17 @@ class TestPlink(unittest.TestCase):
         summaryNew = os.path.join(outStem+'_summary.json')
         summaryDataNew = json.loads(open(summaryNew).read())
         self.assertEqual(summaryDataOld, summaryDataNew)
-        md5expected = ['ab108c8740011ee4cf431879dff5220a',
-                       '99b3fc25288f76b3038debd52d55afa9']
+        md5expected = ['8fc9ba58661e71379501ac504b78ee2c',
+                       '2cd2e2549982d7429887f35f886a7355']
         textPathsTest = [os.path.join(self.outDir, 'test_samples.txt'),
                          os.path.join(self.outDir, 'test_snps.txt') ]
         for i in range(len(textPathsTest)):
             md5 = self.checksum.getMD5hex(textPathsTest[i])
             self.assertEqual(md5, md5expected[i])
         # do not check md5 on full diff output; gzip may not be deterministic
+        gzipPath = os.path.join(self.outDir, 'test.diff.gz')
+        self.assertTrue(os.access(gzipPath, os.R_OK))
+
 
     def test_executables(self):
         """Check that executable scripts compile without crashing"""
