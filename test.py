@@ -28,7 +28,7 @@ class TestPlink(unittest.TestCase):
 
     def setUp(self):
         self.dataDir = '/nfs/gapi/data/genotype/plinktools_test'
-        self.outDir = os.path.abspath(mkdtemp(dir='.'))
+        self.outDir = os.path.abspath(mkdtemp(prefix='output_test_', dir='.'))
         print "Output: "+self.outDir
         self.checksum = ChecksumFinder()
         self.validator = PlinkValidator()
@@ -57,7 +57,6 @@ class TestPlink(unittest.TestCase):
         # do not check md5 on full diff output; gzip may not be deterministic
         gzipPath = os.path.join(self.outDir, 'test.diff.gz')
         self.assertTrue(os.access(gzipPath, os.R_OK))
-
 
     def test_executables(self):
         """Check that executable scripts compile without crashing"""

@@ -29,6 +29,7 @@ See https://github.com/wtsi-npg/zCall
 
 import json, os, re, struct, sys, time
 from glob import glob
+from shutil import copyfile
 from checksum import ChecksumFinder
 
 class PlinkHandler:
@@ -151,6 +152,15 @@ class PlinkMerger(PlinkHandler):
     Omits cross-checking in Plink, but faster, especially for multiple inputs
     """
 
+    def concatenateFiles(self, inPaths, outPath):
+        """Concatenate given list of files to output path 
+
+        Safer than a system call to cat, and fast enough for small files"""
+        out = open(outPath, 'w')
+        for inPath in inPaths:
+            out.write(open(inPath).read())
+        out.close()
+
     def convertChromosome(self, chrom):
         """Convert chromosome from string to numeric ID
 
@@ -214,7 +224,6 @@ class PlinkMerger(PlinkHandler):
         snpTotal = len(open(stems[0]+".bim").readlines())
         if verbose:
             sys.stderr.write(time.asctime()+": Started.\n")
-        congruentSNPs = self.pIdentical(stems, ".bim")
         if self.pIdentical(stems, ".bim") and self.pDisjoint(stems, ".fam"):
             if verbose:
                 msg = "Found congruent SNPs, disjoint samples;"+\
@@ -418,24 +427,19 @@ class PlinkMerger(PlinkHandler):
 
     def writeBimFamCongruentSNPs(self, stems, outPrefix):
         """Write .bim, .fam files for congruent SNPs, disjoint samples"""
-        status = os.system("cp %s %s" %  (stems[0]+".bim", outPrefix+".bim"))
-        if status!=0: raise PlinkToolsError("Failed to write .bim file!")
+        copyfile(stems[0]+".bim", outPrefix+".bim")
         famPaths = []
         for stem in stems: famPaths.append(stem+".fam")
-        status = os.system("cat "+" ".join(famPaths)+" > "+outPrefix+".fam")
-        if status!=0: raise PlinkToolsError("Failed to write .fam file!")
+        self.concatenateFiles(famPaths, outPrefix+".fam")
 
     def writeBimFamCongruentSamples(self, sortedStems, outPrefix):
         """Write .bim, .fam files for congruent samples, disjoint SNPs
 
         Need to ensure stems are in same sort order as merged .bed files"""
-        cmd = "cp %s %s" %  (sortedStems[0]+".fam", outPrefix+".fam")
-        status = os.system(cmd)
-        if status!=0: raise PlinkToolsError("Failed to write .fam file!")
+        copyfile(sortedStems[0]+".fam", outPrefix+".fam")
         bimPaths = []
         for stem in sortedStems: bimPaths.append(stem+".bim")
-        status = os.system("cat "+" ".join(bimPaths)+" > "+outPrefix+".bim")
-        if status!=0: raise PlinkToolsError("Failed to write .bim file!")
+        self.concatenateFiles(bimPaths, outPrefix+".bim")
 
 class MafHetFinder(PlinkHandler):
     """Class to find autosome heterozygosity, split by MAF
